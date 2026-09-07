@@ -43,8 +43,10 @@ export async function syncGfn(db) {
   for (const g of games) {
     // One row per variant: support is per store, so a game streamable from GOG
     // but not Epic is two different answers.
+    // Some catalogue titles arrive with leading or trailing whitespace.
+    const title = g.title.trim();
     for (const v of g.variants ?? []) {
-      insert.run(v.id ?? null, g.title, normaliseTitle(g.title), v.appStore ?? null, null, "AVAILABLE");
+      insert.run(v.id ?? null, title, normaliseTitle(title), v.appStore ?? null, null, "AVAILABLE");
       rows++;
     }
   }
@@ -55,7 +57,7 @@ export async function syncGfn(db) {
     for (const e of await res.json()) {
       const appid = e.steamUrl?.match(/\/app\/(\d+)/)?.[1];
       if (!appid || e.store !== "Steam") continue;
-      insert.run(null, e.title, normaliseTitle(e.title), "STEAM", appid, e.status ?? "AVAILABLE");
+      insert.run(null, e.title.trim(), normaliseTitle(e.title), "STEAM", appid, e.status ?? "AVAILABLE");
       appids++;
     }
   } catch (err) {
@@ -78,21 +80,21 @@ export function applyGfn(db) {
   const byTitle = new Map();
   const byAppid = new Map();
   for (const e of db.prepare("SELECT norm_title, store, steam_appid, status FROM gfn_entry").all()) {
-    if (e.steam_appid) byAppid.set(e.steam_appid, e.status);
-    if (e.store) byTitle.set(`${e.store} ${e.norm_title}`, e.status);
+    if (e.steam_appid) byAppid.set(e.steam_appid, { status: e.status, title: e.norm_title });
+    if (e.store) byTitle.set(`${e.store} ${e.norm_title}`, { status: e.status, title: e.norm_title });
   }
 
-  const update = db.prepare("UPDATE entitlement SET gfn_status = ? WHERE id = ?");
+  const update = db.prepare("UPDATE entitlement SET gfn_status = ?, gfn_title = ? WHERE id = ?");
   let matched = 0;
   for (const row of db.prepare("SELECT id, store, store_game_id, store_title FROM entitlement").all()) {
     // Steam gets the exact appid first and the title as a fallback: the appid
     // list is partial, so a miss there is not an answer.
-    const status =
+    const hit =
       (row.store === "steam" ? byAppid.get(row.store_game_id) : null) ??
       byTitle.get(`${GFN_STORE[row.store]} ${normaliseTitle(row.store_title)}`) ??
       null;
-    update.run(status, row.id);
-    if (status) matched++;
+    update.run(hit?.status ?? null, hit?.title ?? null, row.id);
+    if (hit) matched++;
   }
   return matched;
 }

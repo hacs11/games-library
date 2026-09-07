@@ -1,5 +1,8 @@
 import { createServer } from "node:http";
-import { open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle } from "./db.js";
+import {
+  open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
+  discoverGames, discoverCount,
+} from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
 import { syncGfn, applyGfn } from "./gfn.js";
@@ -10,7 +13,7 @@ import * as gog from "./gog.js";
 import * as epic from "./epic.js";
 
 const STORE_OAUTH = { gog, epic };
-import { layout, listPage, connectPage, unmatchedPage, xboxPage, mergePage } from "./views.js";
+import { layout, listPage, connectPage, unmatchedPage, xboxPage, mergePage, discoverPage } from "./views.js";
 
 const db = open();
 
@@ -34,6 +37,12 @@ const routes = {
   },
 
   "GET /connect": (_req, res) => html(res, page("Connect", connectPage(stores(db)))),
+
+  "GET /discover": (req, res) => {
+    const p = new URL(req.url, "http://x").searchParams;
+    const filters = { q: p.get("q") ?? "", store: p.get("store") ?? "" };
+    html(res, page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters))));
+  },
 
   "GET /merge": (req, res) => {
     const from = gameById(db, new URL(req.url, "http://x").searchParams.get("from"));

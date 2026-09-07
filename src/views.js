@@ -32,13 +32,14 @@ export const layout = (title, body, pending = 0) => `<!doctype html>
   .store.gfn svg { box-shadow: 0 0 0 2px #76b900; }
   .store .bolt { font-size: .85rem; margin-left: -.3rem; align-self: flex-end; }
   td { vertical-align: middle; }
+  .store.other { border: 1px solid; border-radius: .5rem; padding: 0 .4rem; font-size: .75rem; }
   .merge { font-size: .75rem; opacity: 0; }
   tr:hover .merge { opacity: .7; }
   .filters { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
   .filters input[type=search], .filters select { width: auto; font: inherit; padding: .3rem; }
 </style>
 <h1>Games Library</h1>
-<nav><a href="/">Library</a><a href="/unmatched">Unmatched${pending ? ` (${pending})` : ""}</a><a href="/xbox">Xbox</a><a href="/connect">Connect</a></nav>
+<nav><a href="/">Library</a><a href="/unmatched">Unmatched${pending ? ` (${pending})` : ""}</a><a href="/discover">Discover</a><a href="/xbox">Xbox</a><a href="/connect">Connect</a></nav>
 ${body}
 `;
 
@@ -270,3 +271,56 @@ export const mergePage = (from, titles) => `
   <div class="actions"><button>Merge</button><a href="/">Cancel</a></div>
 </form>
 <datalist id="games">${titles.map((t) => `<option value="${esc(t)}">`).join("")}</datalist>`;
+
+// The catalogue minus what you own: games worth buying, and where to buy them.
+const CATALOGUE_STORES = {
+  STEAM: "steam",
+  EPIC: "epic",
+  GOG: "gog",
+  XBOX: "xbox",
+  UPLAY: "Ubisoft",
+  BATTLENET: "Battle.net",
+  EA_APP: "EA app",
+  NV_BUNDLE: "NVIDIA bundle",
+};
+
+const catalogueBadge = (store) => {
+  const key = CATALOGUE_STORES[store];
+  const icon = STORE_ICONS[key];
+  return icon
+    ? `<span class="store" title="${esc(STORE_NAMES[key])}"><svg viewBox="0 0 24 24" width="28" height="28" role="img" aria-label="Available on ${esc(STORE_NAMES[key])}">${icon}</svg></span>`
+    : `<span class="store other">${esc(key ?? store)}</span>`;
+};
+
+export const discoverPage = (games, filters = {}, total = 0) => `
+<p class="hint">Games on GeForce NOW in Australia that you do not already own, and the stores selling them.
+  Everything here streams — you would only be buying the licence.</p>
+<form class="filters" method="get" action="/discover">
+  <input type="search" name="q" placeholder="Search the catalogue" value="${esc(filters.q ?? "")}">
+  <select name="store">
+    <option value="">Any store</option>
+    ${Object.entries(CATALOGUE_STORES)
+      .map(([v, k]) => `<option value="${v}"${filters.store === v ? " selected" : ""}>${esc(STORE_NAMES[k] ?? k)}</option>`)
+      .join("")}
+  </select>
+  <button>Filter</button>
+  ${filters.q || filters.store ? `<a href="/discover">Clear</a>` : ""}
+</form>
+${
+  games.length === 0
+    ? `<p class="empty">Nothing matches. Either you own it all, or widen the filters.</p>`
+    : `<p class="status">${total} game${total === 1 ? "" : "s"} you do not own${
+        games.length < total ? `, showing the first ${games.length}` : ""
+      }.</p>
+<table>
+  <tr><th>Game</th><th>Buy on</th></tr>
+  ${games
+    .map(
+      (g) => `<tr>
+    <td>${esc(g.title)}</td>
+    <td>${g.stores.map(catalogueBadge).join("")}</td>
+  </tr>`,
+    )
+    .join("\n  ")}
+</table>`
+}`;

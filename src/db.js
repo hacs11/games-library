@@ -64,6 +64,9 @@ const MIGRATIONS = [
     addColumn(db, "entitlement", "alt_id TEXT");
     addColumn(db, "gfn_entry", "norm_title TEXT");
   },
+  // Records which catalogue entry an Entitlement matched, so the discover page
+  // can exclude what you own exactly rather than by guessing at titles again.
+  (db) => addColumn(db, "entitlement", "gfn_title TEXT"),
 ];
 
 export function open(path = "data/library.db") {
@@ -140,6 +143,34 @@ export function unmatched(db, afterId = 0) {
         ORDER BY e.id`,
     )
     .all(afterId);
+}
+
+// GeForce NOW games you do not own, and where you could buy them. The NVIDIA
+// appid rows are excluded: they are a Steam-only supplement to the same
+// catalogue and would double every Steam entry.
+export function discoverGames(db, { q = "", store = "" } = {}, limit = 200) {
+  return db
+    .prepare(
+      `SELECT min(title) AS title,
+              group_concat(DISTINCT store) AS stores
+         FROM gfn_entry g
+        WHERE g.steam_appid IS NULL
+          AND g.store IS NOT NULL
+          AND g.store NOT IN ('NONE', 'UNKNOWN')
+          AND g.norm_title NOT IN (SELECT norm_title FROM game)
+          AND g.norm_title NOT IN (SELECT gfn_title FROM entitlement WHERE gfn_title IS NOT NULL)
+          AND (:q = '' OR g.title LIKE '%' || :q || '%')
+          AND (:store = '' OR EXISTS (SELECT 1 FROM gfn_entry s WHERE s.norm_title = g.norm_title AND s.store = :store))
+        GROUP BY g.norm_title
+        ORDER BY min(title) COLLATE NOCASE
+        LIMIT ${limit}`,
+    )
+    .all({ q, store })
+    .map((r) => ({ ...r, stores: r.stores.split(",").sort() }));
+}
+
+export function discoverCount(db, filters = {}) {
+  return discoverGames(db, filters, -1).length;
 }
 
 export const gameById = (db, id) => db.prepare("SELECT id, title FROM game WHERE id = ?").get(Number(id));
