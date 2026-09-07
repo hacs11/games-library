@@ -22,7 +22,7 @@ export function resolveGame(db, title) {
 
 // IGDB first, title clustering for whatever it cannot identify. Anything not
 // resolved by IGDB is flagged for review rather than merged silently.
-export async function matchEntitlements(db, store, identify) {
+export async function matchEntitlements(db, store, identify, identifyByName = null) {
   const rows = db
     .prepare("SELECT id, store_game_id, alt_id, store_title FROM entitlement WHERE store = ? AND locked = 0")
     .all(store);
@@ -44,6 +44,18 @@ export async function matchEntitlements(db, store, identify) {
       .run(`${store}: ${err.message}`);
   }
 
+  // Stores whose ids IGDB does not index (Epic) get a second pass against
+  // IGDB's own titles, so they still land on the same Game as Steam and GOG.
+  let byName = new Map();
+  const missed = rows.filter((r) => !found.get(String(r.store_game_id)) && !(r.alt_id && found.get(String(r.alt_id))));
+  if (identifyByName && missed.length > 0) {
+    try {
+      byName = await identifyByName(db, missed.map((r) => r.store_title), normaliseTitle);
+    } catch (err) {
+      console.error(`IGDB name lookup failed for ${store}: ${err.message}`);
+    }
+  }
+
   const byIgdb = db.prepare(
     `INSERT INTO game (igdb_id, title, norm_title) VALUES (?, ?, ?)
        ON CONFLICT (igdb_id) DO UPDATE SET title = excluded.title RETURNING id`,
@@ -55,12 +67,18 @@ export async function matchEntitlements(db, store, identify) {
   }
 
   let igdb = 0;
+  let named = 0;
   let fallback = 0;
   for (const row of rows) {
-    const hit = found.get(String(row.store_game_id)) ?? (row.alt_id && found.get(String(row.alt_id)));
+    const byId = found.get(String(row.store_game_id)) ?? (row.alt_id && found.get(String(row.alt_id)));
+    const hit = byId || byName.get(normaliseTitle(row.store_title));
     if (hit) {
-      assign.run(byIgdb.get(hit.igdb_id, hit.title, normaliseTitle(hit.title)).id, "igdb", row.id);
-      igdb++;
+      assign.run(
+        byIgdb.get(hit.igdb_id, hit.title, normaliseTitle(hit.title)).id,
+        byId ? "igdb" : "igdb_name",
+        row.id,
+      );
+      byId ? igdb++ : named++;
     } else {
       assign.run(resolveGame(db, row.store_title), "title", row.id);
       fallback++;
@@ -69,5 +87,5 @@ export async function matchEntitlements(db, store, identify) {
   // A Game exists only to hold Entitlements; re-matching can leave one behind.
   db.exec("DELETE FROM game WHERE id NOT IN (SELECT game_id FROM entitlement WHERE game_id IS NOT NULL)");
 
-  return { igdb, fallback };
+  return { igdb, named, fallback };
 }

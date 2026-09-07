@@ -110,7 +110,7 @@ export function unmatched(db, afterId = 0) {
          FROM entitlement e
          JOIN game g ON g.id = e.game_id
         WHERE e.locked = 0
-          AND (e.confidence IS NULL OR e.confidence NOT IN ('igdb', 'manual'))
+          AND (e.confidence IS NULL OR e.confidence NOT IN ('igdb', 'igdb_name', 'manual'))
           AND e.id > ?
           AND (SELECT count(*) FROM entitlement o WHERE o.game_id = e.game_id) > 1
         ORDER BY e.id`,

@@ -97,3 +97,33 @@ test("matching leaves no Games behind that hold no Entitlements", async () => {
     0,
   );
 });
+
+test("a Store IGDB does not index by id is matched by its IGDB title instead", async () => {
+  const db = await seeded("steam", "Hades");
+  saveCredential(db, "epic", { token: "x" });
+  await syncStore(db, "epic", async () => [{ store_game_id: "cat", alt_id: "ns", store_title: "HADES" }]);
+
+  await matchEntitlements(db, "steam", async () => new Map([["steam-0", { igdb_id: 7, title: "Hades" }]]));
+  const result = await matchEntitlements(
+    db,
+    "epic",
+    async () => new Map(), // neither Epic id is known to IGDB
+    async () => new Map([["hades", { igdb_id: 7, title: "Hades" }]]),
+  );
+
+  assert.deepEqual([result.igdb, result.named], [0, 1]);
+  assert.equal(db.prepare("SELECT count(DISTINCT game_id) c FROM entitlement").get().c, 1,
+    "the Epic Entitlement lands on the same Game as Steam");
+  assert.equal(unmatched(db).length, 0);
+});
+
+test("an ambiguous title is left to clustering rather than guessed at", async () => {
+  const db = open(":memory:");
+  saveCredential(db, "epic", { token: "x" });
+  await syncStore(db, "epic", async () => [{ store_game_id: "c1", store_title: "Make Way" }]);
+
+  // Two IGDB games share the name, so identifyByName returns nothing for it.
+  const result = await matchEntitlements(db, "epic", async () => new Map(), async () => new Map());
+  assert.deepEqual([result.named, result.fallback], [0, 1]);
+  assert.equal(db.prepare("SELECT confidence FROM entitlement").get().confidence, "title");
+});

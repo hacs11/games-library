@@ -1,6 +1,6 @@
 import { credential } from "./db.js";
 import { matchEntitlements } from "./match.js";
-import { identify } from "./igdb.js";
+import { identify, identifyByName } from "./igdb.js";
 import { fetchOwnedGames as steam } from "./steam.js";
 import { fetchOwnedGames as gog } from "./gog.js";
 import { fetchOwnedGames as epic } from "./epic.js";
@@ -45,7 +45,7 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
     upsert.run(store, e.store_game_id, e.store_title, e.alt_id ?? null, null, now, now);
   }
 
-  await matchEntitlements(db, store, identify);
+  await matchEntitlements(db, store, identify, identifyByName);
 
   db.prepare(
     "UPDATE store_credential SET status = 'connected', last_synced_at = ?, last_error = NULL WHERE store = ?",

@@ -85,3 +85,28 @@ export async function identify(db, store, uids) {
   }
   return found;
 }
+
+// Fallback identity for Stores whose ids IGDB does not index (Epic): look the
+// title up in IGDB's own catalogue. Only an unambiguous hit counts — if two
+// IGDB games share a normalised name, we cannot tell which you own, so the
+// Entitlement is left to title clustering instead of guessed at.
+export async function identifyByName(db, titles, normalise) {
+  const wanted = new Map(titles.map((t) => [normalise(t), t]));
+  const found = new Map();
+  const counts = new Map();
+
+  for (const batch of chunk([...wanted.values()], 100)) {
+    const list = batch.map((t) => `"${t.replace(/["\\]/g, "")}"`).join(",");
+    const rows = await query(db, "games", `fields id,name; where name = (${list}); limit 500;`);
+    for (const r of rows) {
+      const key = normalise(r.name);
+      if (!wanted.has(key)) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      found.set(key, { igdb_id: r.id, title: r.name });
+    }
+    await pause();
+  }
+
+  for (const [key, n] of counts) if (n > 1) found.delete(key);
+  return found;
+}
