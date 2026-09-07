@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import {
   open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
-  discoverGames, discoverCount,
+  discoverGames, discoverCount, hiddenCount, staleSources,
 } from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
@@ -32,8 +32,13 @@ const page = (title, body) => layout(title, body, unmatched(db).length);
 const routes = {
   "GET /": (req, res) => {
     const p = new URL(req.url, "http://x").searchParams;
-    const filters = { q: p.get("q") ?? "", store: p.get("store") ?? "", gfn: p.get("gfn") === "1" };
-    html(res, page("Library", listPage(listGames(db, filters), filters)));
+    const filters = {
+      q: p.get("q") ?? "",
+      store: p.get("store") ?? "",
+      gfn: p.get("gfn") === "1",
+      all: p.get("all") === "1",
+    };
+    html(res, page("Library", listPage(listGames(db, filters), filters, hiddenCount(db), staleSources(db))));
   },
 
   "GET /connect": (_req, res) => html(res, page("Connect", connectPage(stores(db)))),

@@ -33,6 +33,9 @@ export const layout = (title, body, pending = 0) => `<!doctype html>
   .store .bolt { font-size: .85rem; margin-left: -.3rem; align-self: flex-end; }
   td { vertical-align: middle; }
   .store.other { border: 1px solid; border-radius: .5rem; padding: 0 .4rem; font-size: .75rem; }
+  .stale { border: 1px solid #b8860b; border-radius: .5rem; padding: .6rem .8rem; margin-bottom: 1rem; font-size: .9rem; }
+  .stale form { display: inline; }
+  .stale button { font: inherit; font-size: .85rem; }
   .merge { font-size: .75rem; opacity: 0; }
   tr:hover .merge { opacity: .7; }
   .filters { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
@@ -72,7 +75,8 @@ const badge = ({ store, status }) => {
   }${status === "AVAILABLE" ? `<span class="bolt" aria-hidden="true">&#9889;</span>` : ""}</span>`;
 };
 
-export const listPage = (games, filters = {}) => `
+export const listPage = (games, filters = {}, hidden = 0, stale = []) => `
+${staleBanner(stale)}
 <form class="filters" method="get" action="/">
   <input type="search" name="q" placeholder="Search titles" value="${esc(filters.q ?? "")}">
   <select name="store">
@@ -82,8 +86,9 @@ export const listPage = (games, filters = {}) => `
       .join("")}
   </select>
   <label style="display:inline"><input type="checkbox" name="gfn" value="1" style="width:auto"${filters.gfn ? " checked" : ""}> Confirmed on GeForce NOW</label>
+  ${hidden > 0 || filters.all ? `<label style="display:inline"><input type="checkbox" name="all" value="1" style="width:auto"${filters.all ? " checked" : ""}> Include ${hidden} soundtracks, demos and tools</label>` : ""}
   <button>Filter</button>
-  ${filters.q || filters.store || filters.gfn ? `<a href="/">Clear</a>` : ""}
+  ${filters.q || filters.store || filters.gfn || filters.all ? `<a href="/">Clear</a>` : ""}
 </form>
 ${
   games.length === 0
@@ -324,3 +329,25 @@ ${
     .join("\n  ")}
 </table>`
 }`;
+
+const SOURCE_NAMES = { ...STORE_NAMES, gfn: "GeForce NOW" };
+
+// Nothing syncs on a schedule, so the only thing standing between you and
+// silently stale data is being told about it.
+export const staleBanner = (stale) => {
+  if (stale.length === 0) return "";
+  const describe = (s) =>
+    s.status === "needs_reauth"
+      ? `<strong>${esc(SOURCE_NAMES[s.store] ?? s.store)}</strong> needs reconnecting`
+      : `<strong>${esc(SOURCE_NAMES[s.store] ?? s.store)}</strong> ${
+          s.days === Infinity || !Number.isFinite(s.days) ? "has never been synced" : `last synced ${s.days} days ago`
+        }`;
+  return `<div class="stale">
+  ${stale.map(describe).join(" · ")}
+  ${stale.some((s) => s.status === "needs_reauth") ? `<a href="/connect">Reconnect</a>` : ""}
+  ${stale
+    .filter((s) => s.status !== "needs_reauth")
+    .map((s) => `<form method="post" action="/sync/${s.store}"><button>Sync ${esc(SOURCE_NAMES[s.store] ?? s.store)}</button></form>`)
+    .join(" ")}
+</div>`;
+};

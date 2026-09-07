@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { open, saveCredential, unmatched } from "./db.js";
+import { open, saveCredential, unmatched, listGames } from "./db.js";
 import { matchEntitlements } from "./match.js";
 import { syncStore } from "./sync.js";
 
@@ -162,4 +162,64 @@ test("merging refuses nonsense rather than corrupting the library", async () => 
   assert.equal(mergeGames(db, game.id, game.id), false, "a game cannot merge into itself");
   assert.equal(mergeGames(db, game.id, 99999), false, "nor into one that does not exist");
   assert.equal(db.prepare("SELECT count(*) c FROM entitlement WHERE game_id IS NOT NULL").get().c, 1);
+});
+
+test("store junk is hidden, and never merges into the game it is named after", async () => {
+  const db = await seeded(
+    "steam",
+    "Football Manager 2024",
+    "Football Manager 2024 Pre-game editor",
+    "The Last Caretaker Demo",
+    "Hades",
+  );
+  const { classifyGames } = await import("./match.js");
+
+  // IGDB would happily name-match the editor onto the real game.
+  await matchEntitlements(
+    db,
+    "steam",
+    async () => new Map(),
+    async () =>
+      new Map([
+        ["football manager 2024", { igdb_id: 1, title: "Football Manager 2024" }],
+        ["football manager 2024 pre game editor", { igdb_id: 1, title: "Football Manager 2024" }],
+        ["hades", { igdb_id: 2, title: "Hades" }],
+      ]),
+  );
+  await classifyGames(db, async () => new Map([[1, 0], [2, 0]]));
+
+  const visible = listGames(db).map((g) => g.title);
+  assert.ok(visible.includes("Football Manager 2024"), "the real game stays");
+  assert.ok(!visible.includes("Football Manager 2024 Pre-game editor"), "the editor is hidden");
+  assert.ok(!visible.includes("The Last Caretaker Demo"), "so is the demo");
+  assert.equal(listGames(db, { all: true }).length, 4, "nothing is deleted, only hidden");
+});
+
+test("expansions and mods stay visible; DLC does not", async () => {
+  const db = await seeded("steam", "Dawn of War II: Retribution", "Some DLC Pack");
+  const { classifyGames } = await import("./match.js");
+  await matchEntitlements(
+    db,
+    "steam",
+    async () => new Map(),
+    async () =>
+      new Map([
+        ["dawn of war ii retribution", { igdb_id: 10, title: "Dawn of War II: Retribution" }],
+        ["some dlc pack", { igdb_id: 11, title: "Some DLC Pack" }],
+      ]),
+  );
+  // 2 = expansion, 1 = DLC
+  await classifyGames(db, async () => new Map([[10, 2], [11, 1]]));
+
+  assert.deepEqual(listGames(db).map((g) => g.title), ["Dawn of War II: Retribution"]);
+});
+
+test("a failed game_type lookup leaves everything visible", async () => {
+  const db = await seeded("steam", "Hades");
+  const { classifyGames } = await import("./match.js");
+  await matchEntitlements(db, "steam", async () => new Map(), async () => new Map([["hades", { igdb_id: 2, title: "Hades" }]]));
+  await classifyGames(db, async () => {
+    throw new Error("IGDB 503");
+  });
+  assert.equal(listGames(db).length, 1, "hiding on a failed lookup would make games vanish");
 });

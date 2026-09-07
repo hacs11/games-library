@@ -20,6 +20,10 @@ export function resolveGame(db, title) {
     .get(title, norm).id;
 }
 
+// Store junk: demos, soundtracks, editors and the like. These words are only
+// ever suffixes on store artifacts, never on a real game's title.
+const NON_GAME = /\b(demo|soundtrack|ost|playtest|beta|pre-?game editor|editor|dedicated server|sdk|artbook|art book|wallpapers?|season pass|trailer|bonus content|test server)\b/i;
+
 // IGDB first, title clustering for whatever it cannot identify. Anything not
 // resolved by IGDB is flagged for review rather than merged silently.
 export async function matchEntitlements(db, store, identify, identifyByName = null) {
@@ -70,8 +74,12 @@ export async function matchEntitlements(db, store, identify, identifyByName = nu
   let named = 0;
   let fallback = 0;
   for (const row of rows) {
-    const byId = found.get(String(row.store_game_id)) ?? (row.alt_id && found.get(String(row.alt_id)));
-    const hit = byId || byName.get(normaliseTitle(row.store_title));
+    // "Football Manager 2024 Pre-game editor" name-matches Football Manager
+    // 2024 and would then sit on the list page pretending to be the game
+    // itself. Junk keeps its own Game, which classifyGames then hides.
+    const junk = NON_GAME.test(row.store_title);
+    const byId = junk ? null : found.get(String(row.store_game_id)) ?? (row.alt_id && found.get(String(row.alt_id)));
+    const hit = byId || (junk ? null : byName.get(normaliseTitle(row.store_title)));
     if (hit) {
       assign.run(
         byIgdb.get(hit.igdb_id, hit.title, normaliseTitle(hit.title)).id,
@@ -104,4 +112,48 @@ export function mergeGames(db, fromId, intoId) {
     .run(Number(intoId), Number(fromId), Number(intoId));
   db.exec("DELETE FROM game WHERE id NOT IN (SELECT game_id FROM entitlement WHERE game_id IS NOT NULL)");
   return true;
+}
+
+// Deliberately narrow: only things that cannot be launched at all are hidden.
+// Expansions and mods stay visible — Dawn of War II: Retribution and Darkest
+// Hour are games you sit down and play, whatever IGDB files them under. What
+// gets hidden is DLC, addon packs, patch entries and forks.
+const HIDDEN_TYPES = new Set([1, 13, 14, 12]);
+
+export async function classifyGames(db, fetchTypes) {
+  const identified = db.prepare("SELECT id, igdb_id FROM game WHERE igdb_id IS NOT NULL").all();
+
+  let types = new Map();
+  if (identified.length > 0) {
+    try {
+      types = await fetchTypes(db, identified.map((g) => g.igdb_id));
+    } catch (err) {
+      // Leave everything visible rather than hide things on a failed lookup.
+      console.error(`IGDB game_type lookup failed: ${err.message}`);
+      return { hidden: 0 };
+    }
+  }
+
+  const set = db.prepare("UPDATE game SET is_game = ? WHERE id = ?");
+  let hidden = 0;
+  for (const g of identified) {
+    const type = types.get(g.igdb_id);
+    const playable = type === undefined || !HIDDEN_TYPES.has(type);
+    set.run(playable ? 1 : 0, g.id);
+    if (!playable) hidden++;
+  }
+
+  // Unidentified Games fall back to the title, matched against the store title
+  // as well: IGDB-canonical titles rarely carry the junk suffix that gives it away.
+  for (const g of db.prepare("SELECT id, title FROM game WHERE igdb_id IS NULL").all()) {
+    const titles = db
+      .prepare("SELECT store_title FROM entitlement WHERE game_id = ?")
+      .all(g.id)
+      .map((r) => r.store_title);
+    const junk = [g.title, ...titles].some((t) => NON_GAME.test(t));
+    set.run(junk ? 0 : 1, g.id);
+    if (junk) hidden++;
+  }
+
+  return { hidden };
 }

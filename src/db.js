@@ -82,7 +82,7 @@ export function open(path = "data/library.db") {
 
 // One row per Game, with the Stores it was bought in. Entitlements with no
 // Game yet (unmatched) are deliberately absent — they live in the tray.
-export function listGames(db, { q = "", store = "", gfn = false } = {}) {
+export function listGames(db, { q = "", store = "", gfn = false, all = false } = {}) {
   return db
     .prepare(
       `SELECT g.id,
@@ -91,14 +91,14 @@ export function listGames(db, { q = "", store = "", gfn = false } = {}) {
               max(e.gfn_status = 'AVAILABLE') AS streamable
          FROM game g
          JOIN entitlement e ON e.game_id = g.id
-        WHERE g.is_game = 1
+        WHERE (:all = 1 OR g.is_game = 1)
           AND (:q = '' OR g.title LIKE '%' || :q || '%')
           AND (:store = '' OR EXISTS (SELECT 1 FROM entitlement s WHERE s.game_id = g.id AND s.store = :store))
         GROUP BY g.id
        HAVING (:gfn = 0 OR streamable = 1)
         ORDER BY g.title COLLATE NOCASE`,
     )
-    .all({ q, store, gfn: gfn ? 1 : 0 })
+    .all({ q, store, gfn: gfn ? 1 : 0, all: all ? 1 : 0 })
     .map((r) => ({
       ...r,
       streamable: !!r.streamable,
@@ -172,6 +172,25 @@ export function discoverGames(db, { q = "", store = "" } = {}, limit = 200) {
 export function discoverCount(db, filters = {}) {
   return discoverGames(db, filters, -1).length;
 }
+
+// A Store whose data is old enough to be misleading. GeForce NOW moves fastest
+// — NVIDIA adds and drops titles weekly — so it goes stale soonest.
+const STALE_DAYS = { gfn: 7 };
+const DEFAULT_STALE_DAYS = 30;
+
+export function staleSources(db, now = Date.now()) {
+  return db
+    .prepare("SELECT store, status, last_synced_at FROM store_credential WHERE store <> 'igdb'")
+    .all()
+    .map((row) => {
+      const days = row.last_synced_at ? (now - Date.parse(row.last_synced_at)) / 86_400_000 : Infinity;
+      return { ...row, days: Math.floor(days) };
+    })
+    .filter((row) => row.status === "needs_reauth" || row.days >= (STALE_DAYS[row.store] ?? DEFAULT_STALE_DAYS));
+}
+
+export const hiddenCount = (db) =>
+  db.prepare("SELECT count(*) c FROM game WHERE is_game = 0").get().c;
 
 export const gameById = (db, id) => db.prepare("SELECT id, title FROM game WHERE id = ?").get(Number(id));
 

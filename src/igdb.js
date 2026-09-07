@@ -145,3 +145,15 @@ async function lookupNames(db, titles, wanted, normalise, endpoint, fields, pick
   for (const [key, n] of counts) if (n > 1) found.delete(key);
   return found;
 }
+
+// IGDB's game_type for each id. `category` is deprecated and no longer
+// returned; game_type carries the same values (0 = Main Game, 1 = DLC, …).
+export async function gameTypes(db, igdbIds) {
+  const types = new Map();
+  for (const batch of chunk(igdbIds, 300)) {
+    const rows = await query(db, "games", `fields id,game_type; where id = (${batch.join(",")}); limit 500;`);
+    for (const r of rows) types.set(r.id, r.game_type ?? 0);
+    await pause();
+  }
+  return types;
+}

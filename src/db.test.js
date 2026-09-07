@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { open, listGames } from "./db.js";
+import { open, listGames, staleSources } from "./db.js";
 
 test("listGames groups Entitlements into one row per Game", () => {
   const db = open(":memory:");
@@ -26,4 +26,29 @@ test("listGames groups Entitlements into one row per Game", () => {
       ["Hades", ["steam:"], false],
     ],
   ); // non-game hidden, unmatched Entitlement absent
+});
+
+test("staleness: GeForce NOW goes stale in a week, stores in a month", () => {
+  const db = open(":memory:");
+  const daysAgo = (n) => new Date(Date.now() - n * 86_400_000).toISOString();
+  db.exec(`
+    INSERT INTO store_credential (store, status, last_synced_at) VALUES
+      ('gfn',   'connected', '${daysAgo(8)}'),
+      ('steam', 'connected', '${daysAgo(8)}'),
+      ('gog',   'connected', '${daysAgo(31)}'),
+      ('epic',  'needs_reauth', '${daysAgo(1)}'),
+      ('igdb',  'connected', NULL);
+  `);
+
+  assert.deepEqual(
+    staleSources(db).map((s) => s.store).sort(),
+    ["epic", "gfn", "gog"],
+    "GFN at 8 days but Steam not; GOG at 31; Epic because it needs reconnecting, however recent",
+  );
+});
+
+test("a source that has never synced counts as stale", () => {
+  const db = open(":memory:");
+  db.exec("INSERT INTO store_credential (store, status) VALUES ('gfn', 'connected')");
+  assert.deepEqual(staleSources(db).map((s) => s.store), ["gfn"]);
 });
