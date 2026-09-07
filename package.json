@@ -1,0 +1,7 @@
+{
+  "name": "games-library",
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js"
+  }
+}
