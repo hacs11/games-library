@@ -35,6 +35,12 @@ export const layout = (title, body, pending = 0) => `<!doctype html>
   .cover { width: 46px; height: 62px; object-fit: cover; border-radius: .25rem; display: block; background: color-mix(in srgb, currentColor 12%, transparent); }
   .cover-cell { width: 46px; padding-right: 0; }
   .genres { font-size: .8rem; opacity: .7; }
+  .score { display: inline-block; min-width: 2.1rem; text-align: center; border-radius: .3rem; padding: .1rem .3rem; font-size: .85rem; font-weight: 600; color: #111; }
+  .score.good { background: #66cc33; }
+  .score.ok { background: #ffcc33; }
+  .score.bad { background: #ff6666; }
+  .score.thin { opacity: .55; font-weight: 500; }
+  .score a { color: inherit; text-decoration: none; }
   .store.other { border: 1px solid; border-radius: .5rem; padding: 0 .4rem; font-size: .75rem; }
   .stale { border: 1px solid #b8860b; border-radius: .5rem; padding: .6rem .8rem; margin-bottom: 1rem; font-size: .9rem; }
   .stale form { display: inline; }
@@ -92,22 +98,27 @@ ${staleBanner(stale)}
     <option value="">All genres</option>
     ${(genres ?? []).map((g) => `<option value="${esc(g)}"${filters.genre === g ? " selected" : ""}>${esc(g)}</option>`).join("")}
   </select>
+  <select name="sort">
+    <option value="">A–Z</option>
+    <option value="rating"${filters.sort === "rating" ? " selected" : ""}>Best rated</option>
+  </select>
   <label style="display:inline"><input type="checkbox" name="gfn" value="1" style="width:auto"${filters.gfn ? " checked" : ""}> Confirmed on GeForce NOW</label>
   ${hidden > 0 || filters.all ? `<label style="display:inline"><input type="checkbox" name="all" value="1" style="width:auto"${filters.all ? " checked" : ""}> Include ${hidden} soundtracks, demos and tools</label>` : ""}
   <button>Filter</button>
-  ${filters.q || filters.store || filters.gfn || filters.all || filters.genre ? `<a href="/">Clear</a>` : ""}
+  ${filters.q || filters.store || filters.gfn || filters.all || filters.genre || filters.sort ? `<a href="/">Clear</a>` : ""}
 </form>
 ${
   games.length === 0
     ? `<p class="empty">Nothing here. Connect a store and sync, or widen the filters.</p>`
     : `<p class="status">${games.length} game${games.length === 1 ? "" : "s"}.</p>
 <table>
-  <tr><th colspan="2">Game</th><th>Genres</th><th>Stores</th><th></th></tr>
+  <tr><th colspan="2">Game</th><th>Score</th><th>Genres</th><th>Stores</th><th></th></tr>
   ${games
     .map(
       (g) => `<tr>
     <td class="cover-cell">${cover(g)}</td>
     <td>${esc(g.title)}</td>
+    <td>${score(g)}</td>
     <td class="genres">${esc(g.genres ?? "")}</td>
     <td>${g.stores.map(badge).join("")}</td>
     <td><a class="merge" href="/merge?from=${g.id}" title="Merge this into another game">merge</a></td>
@@ -121,7 +132,7 @@ const STEAM_HINT = `Key from <a href="https://steamcommunity.com/dev/apikey">ste
 Your SteamID is the 17-digit number — and your profile's <em>Game details</em> must be set to Public,
 or Steam silently returns nothing.`;
 
-export const connectPage = (rows) => {
+export const connectPage = (rows, pendingScores = 0, ratings = {}) => {
   const steam = rows.find((r) => r.store === "steam");
   return `
 <form method="post" action="/connect/steam">
@@ -143,6 +154,7 @@ ${oauthFieldset(rows, "epic")}
     <a href="/xbox">Xbox page</a>. Nothing re-checks them.</p>
 </fieldset>
 ${gfnFieldset(rows)}
+${ratingsFieldset(pendingScores, ratings)}
 ${igdbFieldset(rows)}
 `;
 };
@@ -371,3 +383,31 @@ const cover = (g) =>
   g.cover_url
     ? `<img class="cover" src="${esc(g.cover_url)}" alt="" loading="lazy" width="46" height="62">`
     : `<span class="cover" aria-hidden="true"></span>`;
+
+// Metacritic and IGDB's critic aggregate are different measurements, so the
+// badge says which one it is rather than blending them into one number. A
+// score resting on very few reviews is dimmed and says so.
+const score = (g) => {
+  if (g.rating == null) return "";
+  const metacritic = g.rating_source === "metacritic";
+  const critics = metacritic ? null : Number(g.rating_source?.split(":")[1] ?? 0);
+  const thin = !metacritic && critics < 4;
+  const band = g.rating >= 75 ? "good" : g.rating >= 50 ? "ok" : "bad";
+  const label = metacritic
+    ? `Metacritic ${g.rating}`
+    : `IGDB critic aggregate ${g.rating}, from ${critics} review${critics === 1 ? "" : "s"}`;
+  const inner = `<span class="score ${band}${thin ? " thin" : ""}" title="${esc(label)}">${g.rating}</span>`;
+  return g.rating_url ? `<a href="${esc(g.rating_url)}" target="_blank" rel="noopener">${inner}</a>` : inner;
+};
+
+export const ratingsFieldset = (pending, { metacritic = 0, igdb = 0 } = {}) => `
+<fieldset>
+  <legend>Scores</legend>
+  <p class="hint">Metacritic comes from Steam's storefront, which is rate limited to roughly 200 requests
+    every 5 minutes — so this runs on its own and picks up where it left off. Everything else falls back to
+    IGDB's aggregate of critic reviews, which is a different measurement and is labelled as such.</p>
+  <p class="status">${metacritic} Metacritic &middot; ${igdb} IGDB aggregate${
+    pending > 0 ? ` &middot; <strong>${pending} Steam games not yet looked up</strong>` : ""
+  }</p>
+</fieldset>
+<form method="post" action="/ratings"><button>${pending > 0 ? `Fetch scores (${Math.min(pending, 250)} of ${pending})` : "Refresh scores"}</button></form>`;

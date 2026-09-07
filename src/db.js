@@ -73,6 +73,19 @@ const MIGRATIONS = [
     addColumn(db, "gfn_entry", "image_url TEXT");
     addColumn(db, "gfn_entry", "genres TEXT");
   },
+  (db) => {
+    addColumn(db, "game", "rating INTEGER");
+    addColumn(db, "game", "rating_source TEXT");
+    addColumn(db, "game", "rating_url TEXT");
+    // Steam scores are fetched one appid at a time and rate limited, so what
+    // has been asked is remembered — including the misses, which are permanent.
+    db.exec(`CREATE TABLE IF NOT EXISTS steam_rating (
+      appid      TEXT PRIMARY KEY,
+      score      INTEGER,
+      url        TEXT,
+      fetched_at TEXT NOT NULL
+    )`);
+  },
 ];
 
 export function open(path = "data/library.db") {
@@ -88,13 +101,16 @@ export function open(path = "data/library.db") {
 
 // One row per Game, with the Stores it was bought in. Entitlements with no
 // Game yet (unmatched) are deliberately absent — they live in the tray.
-export function listGames(db, { q = "", store = "", gfn = false, all = false, genre = "" } = {}) {
+export function listGames(db, { q = "", store = "", gfn = false, all = false, genre = "", sort = "" } = {}) {
   return db
     .prepare(
       `SELECT g.id,
               g.title,
               g.cover_url,
               g.genres,
+              g.rating,
+              g.rating_source,
+              g.rating_url,
               group_concat(e.store || ':' || coalesce(e.gfn_status, ''), ',') AS stores,
               max(e.gfn_status = 'AVAILABLE') AS streamable
          FROM game g
@@ -105,7 +121,7 @@ export function listGames(db, { q = "", store = "", gfn = false, all = false, ge
           AND (:genre = '' OR g.genres LIKE '%' || :genre || '%')
         GROUP BY g.id
        HAVING (:gfn = 0 OR streamable = 1)
-        ORDER BY g.title COLLATE NOCASE`,
+        ORDER BY ${sort === "rating" ? "g.rating IS NULL, g.rating DESC," : ""} g.title COLLATE NOCASE`,
     )
     .all({ q, store, gfn: gfn ? 1 : 0, all: all ? 1 : 0, genre })
     .map((r) => ({
@@ -208,6 +224,11 @@ export function genreList(db) {
   }
   return [...seen].filter(Boolean).sort();
 }
+
+export const ratingCounts = (db) => ({
+  metacritic: db.prepare("SELECT count(*) c FROM game WHERE rating_source = 'metacritic'").get().c,
+  igdb: db.prepare("SELECT count(*) c FROM game WHERE rating_source LIKE 'igdb:%'").get().c,
+});
 
 export const hiddenCount = (db) =>
   db.prepare("SELECT count(*) c FROM game WHERE is_game = 0").get().c;

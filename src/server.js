@@ -1,14 +1,15 @@
 import { createServer } from "node:http";
 import {
   open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
-  discoverGames, discoverCount, hiddenCount, staleSources, genreList,
+  discoverGames, discoverCount, hiddenCount, staleSources, genreList, ratingCounts,
 } from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
 import { syncGfn, applyGfn } from "./gfn.js";
+import { fetchMetacritic, pendingCount } from "./steam.js";
 import * as xbox from "./xbox.js";
-import { matchEntitlements, mergeGames } from "./match.js";
-import { identify, identifyByName } from "./igdb.js";
+import { matchEntitlements, mergeGames, rateGames } from "./match.js";
+import { identify, identifyByName, criticScores } from "./igdb.js";
 import * as gog from "./gog.js";
 import * as epic from "./epic.js";
 
@@ -38,11 +39,21 @@ const routes = {
       gfn: p.get("gfn") === "1",
       all: p.get("all") === "1",
       genre: p.get("genre") ?? "",
+      sort: p.get("sort") === "rating" ? "rating" : "",
     };
     html(res, page("Library", listPage(listGames(db, filters), filters, hiddenCount(db), staleSources(db), genreList(db))));
   },
 
-  "GET /connect": (_req, res) => html(res, page("Connect", connectPage(stores(db)))),
+  "GET /connect": (_req, res) =>
+    html(res, page("Connect", connectPage(stores(db), pendingCount(db), ratingCounts(db)))),
+
+  // Rate limited to ~200 requests per 5 minutes, so this is its own action
+  // rather than part of a Sync, and picks up where it left off.
+  "POST /ratings": async (_req, res) => {
+    await fetchMetacritic(db).catch((err) => console.error(err.message));
+    await rateGames(db, criticScores).catch((err) => console.error(err.message));
+    seeOther(res, "/connect");
+  },
 
   "GET /discover": (req, res) => {
     const p = new URL(req.url, "http://x").searchParams;

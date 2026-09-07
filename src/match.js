@@ -187,3 +187,49 @@ export async function enrichGames(db, fetchArtwork) {
 
   return db.prepare("SELECT count(*) c FROM game WHERE cover_url IS NOT NULL").get().c;
 }
+
+// Metacritic where Steam has it, IGDB's critic aggregate everywhere else. The
+// source is stored alongside the number: they are not the same measurement and
+// the UI must not pretend otherwise.
+export async function rateGames(db, fetchCritics) {
+  // Steam first, so a real Metacritic score always wins over an aggregate.
+  db.exec(`
+    UPDATE game SET
+      rating = (SELECT r.score FROM steam_rating r
+                  JOIN entitlement e ON e.store_game_id = r.appid AND e.store = 'steam'
+                 WHERE e.game_id = game.id AND r.score IS NOT NULL LIMIT 1),
+      rating_url = (SELECT r.url FROM steam_rating r
+                      JOIN entitlement e ON e.store_game_id = r.appid AND e.store = 'steam'
+                     WHERE e.game_id = game.id AND r.score IS NOT NULL LIMIT 1),
+      rating_source = 'metacritic'
+    WHERE EXISTS (SELECT 1 FROM steam_rating r
+                    JOIN entitlement e ON e.store_game_id = r.appid AND e.store = 'steam'
+                   WHERE e.game_id = game.id AND r.score IS NOT NULL)
+  `);
+
+  const rest = db
+    .prepare("SELECT id, igdb_id FROM game WHERE igdb_id IS NOT NULL AND rating_source IS NOT 'metacritic'")
+    .all();
+  if (rest.length === 0) return { metacritic: metacriticCount(db), igdb: 0 };
+
+  let scores = new Map();
+  try {
+    scores = await fetchCritics(db, rest.map((g) => g.igdb_id));
+  } catch (err) {
+    console.error(`IGDB critic score lookup failed: ${err.message}`);
+    return { metacritic: metacriticCount(db), igdb: 0 };
+  }
+
+  const set = db.prepare("UPDATE game SET rating = ?, rating_source = ?, rating_url = NULL WHERE id = ?");
+  let igdb = 0;
+  for (const g of rest) {
+    const hit = scores.get(g.igdb_id);
+    if (!hit) continue;
+    set.run(hit.score, `igdb:${hit.count}`, g.id);
+    igdb++;
+  }
+  return { metacritic: metacriticCount(db), igdb };
+}
+
+const metacriticCount = (db) =>
+  db.prepare("SELECT count(*) c FROM game WHERE rating_source = 'metacritic'").get().c;

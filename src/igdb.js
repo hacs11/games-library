@@ -180,3 +180,22 @@ export async function artwork(db, igdbIds) {
   }
   return art;
 }
+
+// IGDB's own aggregation of critic scores — related to Metacritic but not the
+// same number, and sometimes built from very few reviews, so the count is kept
+// to let the UI say how thin a score is.
+export async function criticScores(db, igdbIds) {
+  const scores = new Map();
+  for (const batch of chunk(igdbIds, 300)) {
+    const rows = await query(
+      db,
+      "games",
+      `fields id,aggregated_rating,aggregated_rating_count; where id = (${batch.join(",")}) & aggregated_rating != null; limit 500;`,
+    );
+    for (const r of rows) {
+      scores.set(r.id, { score: Math.round(r.aggregated_rating), count: r.aggregated_rating_count ?? 0 });
+    }
+    await pause();
+  }
+  return scores;
+}

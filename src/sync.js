@@ -1,6 +1,6 @@
 import { credential } from "./db.js";
-import { matchEntitlements, classifyGames, enrichGames } from "./match.js";
-import { identify, identifyByName, gameTypes, artwork } from "./igdb.js";
+import { matchEntitlements, classifyGames, enrichGames, rateGames } from "./match.js";
+import { identify, identifyByName, gameTypes, artwork, criticScores } from "./igdb.js";
 import { fetchOwnedGames as steam } from "./steam.js";
 import { fetchOwnedGames as gog } from "./gog.js";
 import { fetchOwnedGames as epic } from "./epic.js";
@@ -48,6 +48,7 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
   await matchEntitlements(db, store, identify, identifyByName);
   await classifyGames(db, gameTypes);
   await enrichGames(db, artwork);
+  await rateGames(db, criticScores);
 
   db.prepare(
     "UPDATE store_credential SET status = 'connected', last_synced_at = ?, last_error = NULL WHERE store = ?",
