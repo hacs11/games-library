@@ -119,9 +119,9 @@ export async function fetchPrices(db, { delay = 1200 } = {}) {
     .map((r) => r.appid);
 
   const save = db.prepare(
-    `INSERT OR REPLACE INTO steam_price
-       (appid, currency, final_cents, initial_cents, discount_percent, formatted, fetched_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO catalogue_price
+       (store, store_id, currency, final_cents, initial_cents, discount_percent, formatted, fetched_at)
+       VALUES ('steam', ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const now = new Date().toISOString();

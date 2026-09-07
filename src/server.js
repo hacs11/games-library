@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import {
   open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
-  discoverGames, discoverCount, hiddenCount, staleSources, genreList, ratingCounts,
+  discoverGames, discoverCount, discoverDetail, hiddenCount, staleSources, genreList, ratingCounts,
   ownedCount, gameDetail, countGames, priceCounts, credential,
 } from "./db.js";
 import { syncStore } from "./sync.js";
@@ -15,6 +15,7 @@ import * as epic from "./epic.js";
 import * as xbox from "./xbox.js";
 import {
   layout, listPage, connectPage, unmatchedPage, xboxPage, mergePage, discoverPage, detailPanel,
+  discoverPanel,
 } from "./views.js";
 
 const STORE_OAUTH = { gog, epic };
@@ -101,7 +102,15 @@ const routes = {
       sale: p.get("sale") === "1",
       sort: p.get("sort") ?? "",
     };
-    html(res, page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters)), "/discover"));
+    // Same shape as the Library panel: its own URL, so it is linkable and the
+    // back button closes it.
+    const selected = p.get("title") ? discoverDetail(db, p.get("title")) : null;
+    html(
+      res,
+      page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters)), "/discover", {
+        panel: discoverPanel(selected, `/discover${queryString(filters)}`),
+      }),
+    );
   },
 
   "GET /unmatched": (req, res) => {
@@ -168,6 +177,9 @@ const routes = {
       await syncAppIds(db, cred.data).catch((err) => console.error(err.message));
       await fetchPrices(db).catch((err) => console.error(err.message));
     }
+    // GOG's catalogue is unauthenticated, so it runs whether or not Steam is
+    // connected — and one store failing must not cost you the other's prices.
+    await gog.syncCatalogue(db).catch((err) => console.error(err.message));
     seeOther(res, "/connect");
   },
 

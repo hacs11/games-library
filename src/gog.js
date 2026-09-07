@@ -1,4 +1,5 @@
 import { saveCredential } from "./db.js";
+import { normaliseTitle } from "./match.js";
 
 // GOG Galaxy's own OAuth client. Publicly known and used by every third-party
 // GOG tool; there is no way to register your own.
@@ -64,4 +65,84 @@ export async function fetchOwnedGames(data, db) {
     }
     if (page >= (json.totalPages ?? 1)) return games;
   }
+}
+
+// GOG's storefront catalogue: id, title and AUD price in one paginated sweep,
+// unauthenticated. 100 per page is the ceiling — asking for more returns an
+// error list rather than products.
+const CATALOG = "https://catalog.gog.com/v1/catalog";
+
+// "-90%" -> 90. GOG formats the discount for display; the number is what the
+// sort and the "on sale" filter need.
+const percent = (s) => {
+  const n = Number.parseInt(String(s ?? "").replace(/[^\d]/g, ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+
+// "5.49" -> 549. Prices arrive as decimal strings, and cents keep them
+// comparable with Steam's without floats getting involved.
+const cents = (s) => {
+  const n = Math.round(Number.parseFloat(s) * 100);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Like Steam's app list, a title claimed by more than one product is dropped —
+// GOG sells editions, bundles and soundtracks under names that collide, and
+// pricing the wrong one is worse than pricing nothing.
+export async function syncCatalogue(db, { pages = 100 } = {}) {
+  const byName = new Map();
+  const ambiguous = new Set();
+
+  for (let page = 1; page <= pages; page++) {
+    const res = await fetch(
+      `${CATALOG}?limit=100&page=${page}&countryCode=AU&locale=en-US&currencyCode=AUD&productType=in:game`,
+    );
+    if (!res.ok) throw new Error(`GOG catalogue returned ${res.status} ${res.statusText}`);
+    const json = await res.json();
+    const products = json.products ?? [];
+    if (products.length === 0) break;
+
+    for (const p of products) {
+      const key = normaliseTitle(p.title ?? "");
+      if (!key) continue;
+      if (byName.has(key) && byName.get(key).id !== String(p.id)) ambiguous.add(key);
+      else byName.set(key, { id: String(p.id), price: p.price });
+    }
+    if (page >= (json.pages ?? 1)) break;
+  }
+
+  // A partial sweep must not erase what is already known, so the replace only
+  // happens once every page has been fetched.
+  if (byName.size === 0) throw new Error("GOG catalogue came back empty; keeping the previous one.");
+
+  const now = new Date().toISOString();
+  const app = db.prepare("INSERT OR REPLACE INTO gog_app (norm_title, product_id) VALUES (?, ?)");
+  const save = db.prepare(
+    `INSERT OR REPLACE INTO catalogue_price
+       (store, store_id, currency, final_cents, initial_cents, discount_percent, formatted, fetched_at)
+       VALUES ('gog', ?, ?, ?, ?, ?, ?, ?)`,
+  );
+
+  db.exec("DELETE FROM gog_app");
+  db.exec("DELETE FROM catalogue_price WHERE store = 'gog'");
+
+  let stored = 0;
+  let priced = 0;
+  for (const [key, { id, price }] of byName) {
+    if (ambiguous.has(key)) continue;
+    app.run(key, id);
+    stored++;
+    const final = cents(price?.finalMoney?.amount);
+    save.run(
+      id,
+      price?.finalMoney?.currency ?? null,
+      final,
+      cents(price?.baseMoney?.amount),
+      percent(price?.discount),
+      price?.final ? `A${price.final}` : null,
+      now,
+    );
+    if (final != null) priced++;
+  }
+  return { products: byName.size, ambiguous: ambiguous.size, stored, priced };
 }

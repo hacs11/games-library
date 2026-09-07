@@ -107,6 +107,30 @@ const MIGRATIONS = [
       fetched_at       TEXT NOT NULL
     )`);
   },
+  // A second Store sells the same catalogue, so prices stop being Steam's.
+  // GOG's own ids are its product ids; Steam's are appids, and the pair
+  // (store, id) is what a price actually belongs to.
+  (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS gog_app (
+      norm_title TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL
+    )`);
+    db.exec(`CREATE TABLE IF NOT EXISTS catalogue_price (
+      store            TEXT NOT NULL,
+      store_id         TEXT NOT NULL,
+      currency         TEXT,
+      final_cents      INTEGER,
+      initial_cents    INTEGER,
+      discount_percent INTEGER,
+      formatted        TEXT,
+      fetched_at       TEXT NOT NULL,
+      PRIMARY KEY (store, store_id)
+    )`);
+    db.exec(`INSERT OR REPLACE INTO catalogue_price
+               SELECT 'steam', appid, currency, final_cents, initial_cents,
+                      discount_percent, formatted, fetched_at FROM steam_price`);
+    db.exec("DROP TABLE steam_price");
+  },
 ];
 
 export function open(path = "data/library.db") {
@@ -214,15 +238,14 @@ export function unmatched(db, afterId = 0) {
 export function discoverGames(db, { q = "", store = "", sale = false, sort = "" } = {}, limit = 200) {
   return db
     .prepare(
-      `SELECT min(title) AS title,
-              max(image_url) AS cover_url,
-              max(genres) AS genres,
-              group_concat(DISTINCT store) AS stores,
-              max(p.formatted) AS price,
-              max(p.discount_percent) AS discount
+      `SELECT g.norm_title,
+              min(g.title) AS title,
+              max(g.image_url) AS cover_url,
+              max(g.genres) AS genres,
+              group_concat(DISTINCT g.store) AS stores,
+              ${PRICE_COLUMNS}
          FROM gfn_entry g
-         LEFT JOIN steam_app a ON a.norm_title = g.norm_title
-         LEFT JOIN steam_price p ON p.appid = a.appid
+         ${PRICE_JOINS}
         WHERE g.steam_appid IS NULL
           AND g.store IS NOT NULL
           AND g.store NOT IN ('NONE', 'UNKNOWN')
@@ -231,12 +254,44 @@ export function discoverGames(db, { q = "", store = "", sale = false, sort = "" 
           AND (:q = '' OR g.title LIKE '%' || :q || '%')
           AND (:store = '' OR EXISTS (SELECT 1 FROM gfn_entry s WHERE s.norm_title = g.norm_title AND s.store = :store))
         GROUP BY g.norm_title
-       HAVING (:sale = 0 OR discount > 0)
-        ORDER BY ${sort === "discount" ? "discount IS NULL, discount DESC," : ""} min(title) COLLATE NOCASE
+       HAVING (:sale = 0 OR best_discount > 0)
+        ORDER BY ${sort === "discount" ? "best_discount IS NULL, best_discount DESC," : ""} min(g.title) COLLATE NOCASE
         ${limit > 0 ? `LIMIT ${limit}` : ""}`,
     )
     .all({ q, store, sale: sale ? 1 : 0 })
-    .map((r) => ({ ...r, stores: r.stores.split(",").sort() }));
+    .map(withPrices);
+}
+
+// A price is only shown for a Store that GeForce NOW actually lists this title
+// under. Support is per-Entitlement (docs/adr/0003): buying it on GOG when only
+// the Steam variant streams would be a purchase that does not stream, so the
+// cheaper price of a Store you cannot stream from is worse than no price.
+
+// sp/gp join on norm_title, so their columns are identical across every row of
+// a group — a bare aggregate over them picks the one value there is.
+const PRICE_COLUMNS = `max(sp.formatted) AS steam_price,
+              max(sp.discount_percent) AS steam_discount,
+              max(gp.formatted) AS gog_price,
+              max(gp.discount_percent) AS gog_discount,
+              max(coalesce(sp.discount_percent, 0), coalesce(gp.discount_percent, 0)) AS best_discount`;
+
+// The `sells` clause is what keeps a price tied to a Store you could actually
+// stream from. Without it a GOG sale leaks into best_discount and badges a
+// Steam-only title "-95%" next to Steam's full price.
+const sells = (catalogueStore) =>
+  `EXISTS (SELECT 1 FROM gfn_entry v WHERE v.norm_title = g.norm_title AND v.store = '${catalogueStore}')`;
+
+const PRICE_JOINS = `LEFT JOIN steam_app a ON a.norm_title = g.norm_title AND ${sells("STEAM")}
+         LEFT JOIN catalogue_price sp ON sp.store = 'steam' AND sp.store_id = a.appid
+         LEFT JOIN gog_app ga ON ga.norm_title = g.norm_title AND ${sells("GOG")}
+         LEFT JOIN catalogue_price gp ON gp.store = 'gog' AND gp.store_id = ga.product_id`;
+
+function withPrices(r) {
+  const prices = [
+    { store: "steam", formatted: r.steam_price, discount: r.steam_discount },
+    { store: "gog", formatted: r.gog_price, discount: r.gog_discount },
+  ].filter((p) => p.formatted);
+  return { ...r, stores: r.stores.split(",").sort(), prices, best_discount: r.best_discount || null };
 }
 
 export function discoverCount(db, filters = {}) {
@@ -245,9 +300,37 @@ export function discoverCount(db, filters = {}) {
 
 export const priceCounts = (db) => ({
   apps: db.prepare("SELECT count(*) c FROM steam_app").get().c,
-  priced: db.prepare("SELECT count(*) c FROM steam_price WHERE final_cents IS NOT NULL").get().c,
-  onSale: db.prepare("SELECT count(*) c FROM steam_price WHERE discount_percent > 0").get().c,
+  products: db.prepare("SELECT count(*) c FROM gog_app").get().c,
+  ...Object.fromEntries(
+    ["steam", "gog"].map((store) => [
+      store,
+      {
+        priced: db.prepare("SELECT count(*) c FROM catalogue_price WHERE store = ? AND final_cents IS NOT NULL").get(store).c,
+        onSale: db.prepare("SELECT count(*) c FROM catalogue_price WHERE store = ? AND discount_percent > 0").get(store).c,
+      },
+    ]),
+  ),
 });
+
+// One catalogue title for the Discover panel, keyed by the normalised title
+// the rows are grouped on — Discover has no Game row to hang an id off.
+export function discoverDetail(db, normTitle) {
+  const row = db
+    .prepare(
+      `SELECT g.norm_title,
+              min(g.title) AS title,
+              max(g.image_url) AS cover_url,
+              max(g.genres) AS genres,
+              group_concat(DISTINCT g.store) AS stores,
+              ${PRICE_COLUMNS}
+         FROM gfn_entry g
+         ${PRICE_JOINS}
+        WHERE g.norm_title = ?
+        GROUP BY g.norm_title`,
+    )
+    .get(String(normTitle));
+  return row ? withPrices(row) : null;
+}
 
 // A Store whose data is old enough to be misleading. GeForce NOW moves fastest
 // — NVIDIA adds and drops titles weekly — so it goes stale soonest.

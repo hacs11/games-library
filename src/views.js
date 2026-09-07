@@ -478,7 +478,7 @@ const CATALOGUE_STORES = {
 export const discoverPage = (games, filters = {}, total = 0) => `
 ${title("Discover", {
   count: `${total} titles`,
-  intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's, in AUD.",
+  intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's and GOG's, in AUD.",
 })}
 <form class="filters" method="get" action="/discover">
   <span class="search-wrap">
@@ -509,7 +509,7 @@ ${
     : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
 ${games
   .map(
-    (g) => `<div class="card elev-sm">
+    (g) => `<a class="card elev-sm" href="/discover${qs({ ...filters, title: g.norm_title })}" style="display:block;color:inherit;text-decoration:none">
   <div style="display:flex;gap:12px">
     <span class="thumb" style="width:52px;height:70px;border-radius:6px;background:var(--color-bg)">${
       g.cover_url ? `<img src="${esc(g.cover_url)}" alt="" loading="lazy">` : `<span style="font-size:15px">${esc(initials(g.title))}</span>`
@@ -519,17 +519,93 @@ ${games
       <div style="font-size:11px;margin-top:4px;color:color-mix(in srgb, var(--color-text) 45%, transparent)">${esc((g.genres ?? "").split(", ").slice(0, 3).join(", "))}</div>
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
         <span class="tag" style="background:#1d2a14;color:#a3d95a;box-shadow:inset 0 0 0 1px #3f5c22">${icon("lightning", 9)} GFN</span>
-        ${g.discount > 0 ? `<span class="tag tag-accent" title="Steam discount">−${g.discount}%</span>` : ""}
-        ${g.price ? `<span class="tag tag-neutral" style="font-variant-numeric:tabular-nums" title="Steam price, AUD">${esc(g.price)}</span>` : ""}
+        ${g.best_discount > 0 ? `<span class="tag tag-accent" title="Best discount across the stores selling it">−${g.best_discount}%</span>` : ""}
+        ${priceTags(g.prices)}
         ${g.stores.map((s) => `<span class="store-pill">${storeMark(CATALOGUE_STORES[s] ?? "?", 12)}${esc(STORE_NAMES[CATALOGUE_STORES[s]] ?? CATALOGUE_STORES[s] ?? s)}</span>`).join("")}
       </div>
     </div>
   </div>
-</div>`,
+</a>`,
   )
   .join("\n")}
 </div>`
 }`;
+
+const priceTags = (prices = []) =>
+  prices
+    .map(
+      (p) => `<span class="tag tag-neutral" style="font-variant-numeric:tabular-nums" title="${esc(
+        `${STORE_NAMES[p.store] ?? p.store} price, AUD`,
+      )}">${storeMark(p.store, 10)} ${esc(p.formatted)}</span>`,
+    )
+    .join("");
+
+// The Discover panel is keyed by normalised title, not a Game id: these are
+// catalogue entries you do not own, so there is no Game row behind them.
+export const discoverPanel = (item, closeHref) => {
+  if (!item) return "";
+  const cheapest = [...item.prices].sort((a, b) => (a.formatted ?? "").length - (b.formatted ?? "").length);
+  return `
+<a class="scrim" href="${esc(closeHref)}" aria-label="Close"></a>
+<aside class="panel" role="dialog" aria-modal="true" aria-label="${esc(item.title)}">
+  <div class="panel-close"><a class="btn btn-secondary btn-icon" data-close href="${esc(closeHref)}" aria-label="Close">${icon("x", 15)}</a></div>
+  <div class="cover" style="width:132px">${
+    item.cover_url
+      ? `<img src="${esc(item.cover_url)}" alt="">`
+      : `<span class="cover-mono" style="font-size:26px">${esc(initials(item.title))}</span>`
+  }</div>
+  <h3>${esc(item.title)}</h3>
+  <div class="panel-meta">Not owned${item.best_discount > 0 ? ` · on sale, up to −${item.best_discount}%` : ""}</div>
+  <div class="panel-tags">${(item.genres ?? "")
+    .split(", ")
+    .filter(Boolean)
+    .map((t) => `<span class="tag tag-neutral">${esc(t)}</span>`)
+    .join("")}</div>
+  <hr>
+  <h6>Buy it on</h6>
+  ${item.stores
+    .map((raw) => {
+      const store = CATALOGUE_STORES[raw] ?? raw;
+      const price = item.prices.find((p) => p.store === store);
+      return `<div class="own-row">
+    <span class="own-mark">${storeMark(store, 16)}</span>
+    <span style="font-size:13px">${esc(STORE_LABELS[store] ?? STORE_NAMES[store] ?? store)}</span>
+    <span class="own-detail" style="font-variant-numeric:tabular-nums">${
+      price
+        ? `${price.discount > 0 ? `<span style="color:var(--color-accent)">−${price.discount}%</span> ` : ""}${esc(price.formatted)}`
+        : `<span class="muted">No price</span>`
+    }</span>
+  </div>`;
+    })
+    .join("")}
+  ${
+    item.prices.length < item.stores.length
+      ? `<p class="muted" style="font-size:11px;margin:10px 0 0">Only Steam and GOG publish prices we can read. The rest stream all the same.</p>`
+      : ""
+  }
+  <h6 style="margin-top:20px">GeForce NOW</h6>
+  <div class="gfn-row">
+    <span style="color:#a3d95a">${icon("lightning", 15)}</span>
+    <span style="color:#a3d95a">In the Australian catalogue via ${item.stores
+      .map((raw) => esc(STORE_NAMES[CATALOGUE_STORES[raw] ?? raw] ?? raw))
+      .join(", ")}</span>
+  </div>
+  <p class="muted" style="font-size:11px;margin:8px 0 0">Support is per store — buy it on a store listed above, or it will not stream.</p>
+  <div class="panel-actions">
+    <a class="btn btn-primary" href="https://play.geforcenow.com/" target="_blank" rel="noopener">Open GeForce NOW</a>
+    ${cheapest[0] ? `<a class="btn btn-secondary" href="${esc(catalogueUrl(cheapest[0].store, item.title))}" target="_blank" rel="noopener">Open store page</a>` : ""}
+  </div>
+</aside>`;
+};
+
+// No product ids on the catalogue side, so these are searches by title.
+const catalogueUrl = (store, title) => {
+  const q = encodeURIComponent(title);
+  return {
+    steam: `https://store.steampowered.com/search/?term=${q}`,
+    gog: `https://www.gog.com/en/games?query=${q}`,
+  }[store] ?? "#";
+};
 
 export const xboxPage = (items, stats = {}) => `
 ${title("Xbox", {
@@ -687,12 +763,12 @@ ${connectCard({
 ${connectCard({
   store: "steam",
   label: "Catalogue prices",
-  row: { status: counts.prices?.priced ? "connected" : undefined },
-  counts: counts.prices?.priced
-    ? `${counts.prices.priced} priced · ${counts.prices.onSale} on sale`
+  row: { status: counts.prices?.steam?.priced || counts.prices?.gog?.priced ? "connected" : undefined },
+  counts: counts.prices?.steam?.priced || counts.prices?.gog?.priced
+    ? `Steam ${counts.prices.steam.priced} priced · ${counts.prices.steam.onSale} on sale — GOG ${counts.prices.gog.priced} priced · ${counts.prices.gog.onSale} on sale`
     : "not fetched yet",
   action: `<form class="inline" method="post" action="/prices"><button class="btn btn-secondary" style="font-size:12px">Refresh prices</button></form>`,
-  body: `<p class="intro" style="margin:0">Steam prices in AUD for the Discover catalogue, resolved by title against Steam's own app list. Epic, GOG and Xbox publish no reachable price data, so those titles show no price. Takes a couple of minutes.</p>`,
+  body: `<p class="intro" style="margin:0">Steam and GOG prices in AUD for the Discover catalogue, resolved by title against each store's own catalogue. Epic publishes a list price but no discount, and Xbox none at all, so those titles show no price. Takes a couple of minutes.</p>`,
 })}
 ${connectCard({
   store: "igdb",
