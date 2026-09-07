@@ -86,6 +86,10 @@ const MIGRATIONS = [
       fetched_at TEXT NOT NULL
     )`);
   },
+  (db) => {
+    addColumn(db, "game", "year INTEGER");
+    addColumn(db, "entitlement", "playtime_minutes INTEGER");
+  },
 ];
 
 export function open(path = "data/library.db") {
@@ -101,7 +105,14 @@ export function open(path = "data/library.db") {
 
 // One row per Game, with the Stores it was bought in. Entitlements with no
 // Game yet (unmatched) are deliberately absent — they live in the tray.
-export function listGames(db, { q = "", store = "", gfn = false, all = false, genre = "", sort = "" } = {}) {
+const SORTS = {
+  rating: "g.rating IS NULL, g.rating DESC,",
+  year: "g.year IS NULL, g.year DESC,",
+};
+
+// Rendering 614 covers inline makes a 560KB page on every navigation, so the
+// grid is capped and the count says so; ?limit=0 renders everything.
+export function listGames(db, { q = "", store = "", gfn = false, all = false, genre = "", sort = "", minScore = 0 } = {}, limit = 240) {
   return db
     .prepare(
       `SELECT g.id,
@@ -111,6 +122,8 @@ export function listGames(db, { q = "", store = "", gfn = false, all = false, ge
               g.rating,
               g.rating_source,
               g.rating_url,
+              g.year,
+              (SELECT sum(playtime_minutes) FROM entitlement p WHERE p.game_id = g.id) AS playtime_minutes,
               group_concat(e.store || ':' || coalesce(e.gfn_status, ''), ',') AS stores,
               max(e.gfn_status = 'AVAILABLE') AS streamable
          FROM game g
@@ -119,11 +132,13 @@ export function listGames(db, { q = "", store = "", gfn = false, all = false, ge
           AND (:q = '' OR g.title LIKE '%' || :q || '%')
           AND (:store = '' OR EXISTS (SELECT 1 FROM entitlement s WHERE s.game_id = g.id AND s.store = :store))
           AND (:genre = '' OR g.genres LIKE '%' || :genre || '%')
+          AND (:minScore = 0 OR g.rating >= :minScore)
         GROUP BY g.id
        HAVING (:gfn = 0 OR streamable = 1)
-        ORDER BY ${sort === "rating" ? "g.rating IS NULL, g.rating DESC," : ""} g.title COLLATE NOCASE`,
+        ORDER BY ${SORTS[sort] ?? ""} g.title COLLATE NOCASE
+        ${limit > 0 ? `LIMIT ${Number(limit)}` : ""}`,
     )
-    .all({ q, store, gfn: gfn ? 1 : 0, all: all ? 1 : 0, genre })
+    .all({ q, store, gfn: gfn ? 1 : 0, all: all ? 1 : 0, genre, minScore: Number(minScore) || 0 })
     .map((r) => ({
       ...r,
       streamable: !!r.streamable,
@@ -240,4 +255,30 @@ export const gameByTitle = (db, title) =>
 
 export function gameTitles(db) {
   return db.prepare("SELECT title FROM game ORDER BY title COLLATE NOCASE").all().map((r) => r.title);
+}
+
+export function countGames(db, filters = {}) {
+  return listGames(db, filters, 0).length;
+}
+
+export const ownedCount = (db) =>
+  db.prepare("SELECT count(*) c FROM game WHERE is_game = 1 AND EXISTS (SELECT 1 FROM entitlement e WHERE e.game_id = game.id)").get().c;
+
+// Everything the detail panel shows about one Game, including per-Store rows.
+export function gameDetail(db, id) {
+  const game = db
+    .prepare(
+      `SELECT g.*, (SELECT sum(playtime_minutes) FROM entitlement p WHERE p.game_id = g.id) AS playtime_minutes
+         FROM game g WHERE g.id = ?`,
+    )
+    .get(Number(id));
+  if (!game) return null;
+
+  game.entitlements = db
+    .prepare(
+      `SELECT store, store_game_id, store_title, gfn_status, playtime_minutes
+         FROM entitlement WHERE game_id = ? ORDER BY store`,
+    )
+    .all(Number(id));
+  return game;
 }

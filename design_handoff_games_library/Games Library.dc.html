@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="_ds/nocturne-e2f1856f-bbf9-4bd5-93eb-e0416e4e052c/styles.css">
+<script src="_ds/nocturne-e2f1856f-bbf9-4bd5-93eb-e0416e4e052c/_ds_bundle.js"></script>
+<style>
+  body { margin: 0; }
+  a { color: var(--color-accent); }
+  a:hover { color: var(--color-accent-400); }
+  select.input { appearance: none; padding-right: 26px; background-image: linear-gradient(transparent, transparent); }
+  input[type=range] { accent-color: var(--color-accent); }
+</style>
+</helmet>
+<div style="min-height: 100vh; background: var(--color-bg); color: var(--color-text); font-family: var(--font-body); padding-bottom: 64px">
+
+  <header style="position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 22px; padding: 14px 28px; background: color-mix(in srgb, var(--color-bg) 88%, transparent); backdrop-filter: blur(10px); background-image: linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent); background-repeat: no-repeat; background-position: bottom; background-size: 100% 1px">
+    <div style="display: flex; align-items: center; gap: 9px; margin-right: auto">
+      <div style="width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--color-accent); display: grid; place-items: center; color: var(--color-accent); font-size: 11px; font-weight: 600">GL</div>
+      <span style="font-family: var(--font-heading); font-weight: 500; font-size: 16px; letter-spacing: -0.01em">Games Library</span>
+    </div>
+    <nav style="display: flex; align-items: center; gap: 4px">
+      <button onClick="{{ goLibrary }}" style="background: transparent; border: 0; cursor: pointer; font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 8px; color: {{ navLibraryColor }}; background-color: {{ navLibraryBg }}">Library</button>
+      <button onClick="{{ goUnmatched }}" style="background: transparent; border: 0; cursor: pointer; font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 8px; color: {{ navUnmatchedColor }}; background-color: {{ navUnmatchedBg }}">Unmatched</button>
+      <button onClick="{{ goDiscover }}" style="background: transparent; border: 0; cursor: pointer; font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 8px; color: {{ navDiscoverColor }}; background-color: {{ navDiscoverBg }}">Discover</button>
+      <button onClick="{{ goXbox }}" style="background: transparent; border: 0; cursor: pointer; font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 8px; color: {{ navXboxColor }}; background-color: {{ navXboxBg }}">Xbox</button>
+      <button onClick="{{ goConnect }}" style="background: transparent; border: 0; cursor: pointer; font: inherit; font-size: 13px; padding: 6px 11px; border-radius: 8px; color: {{ navConnectColor }}; background-color: {{ navConnectBg }}">Connect</button>
+    </nav>
+  </header>
+
+  <sc-if value="{{ isLibrary }}" hint-placeholder-val="{{ true }}">
+  <main style="max-width: 1240px; padding: 0 28px">
+
+    <div style="display: flex; align-items: flex-end; gap: 18px; padding: 34px 0 20px">
+      <h1 style="font-size: 34px; margin: 0; letter-spacing: -0.02em">Library</h1>
+      <span style="font-size: 13px; padding-bottom: 6px; color: color-mix(in srgb, var(--color-text) 50%, transparent)">{{ countLabel }}</span>
+    </div>
+
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding-bottom: 14px">
+      <div style="position: relative; flex: 1 1 240px; min-width: 200px; max-width: 320px">
+        <svg viewBox="0 0 256 256" width="15" height="15" fill="currentColor" style="position: absolute; left: 10px; top: 11px; opacity: 0.45"><path d="M229.66,218.34l-50.07-50.06a88.11,88.11,0,1,0-11.31,11.31l50.06,50.07a8,8,0,0,0,11.32-11.32ZM40,112a72,72,0,1,1,72,72A72.08,72.08,0,0,1,40,112Z"></path></svg>
+        <input class="input" placeholder="Search titles" value="{{ q }}" onChange="{{ onQuery }}" style="padding-left: 31px"/>
+      </div>
+      <select class="input" value="{{ store }}" onChange="{{ onStore }}" style="width: auto; min-width: 132px">
+        <option value="all">All stores</option>
+        <option value="steam">Steam</option>
+        <option value="epic">Epic Games</option>
+        <option value="gog">GOG</option>
+        <option value="xbox">Xbox</option>
+      </select>
+      <select class="input" value="{{ genre }}" onChange="{{ onGenre }}" style="width: auto; min-width: 140px">
+        <option value="all">All genres</option>
+        <option value="Adventure">Adventure</option>
+        <option value="Role-playing (RPG)">Role-playing (RPG)</option>
+        <option value="Strategy">Strategy</option>
+        <option value="Shooter">Shooter</option>
+        <option value="Puzzle">Puzzle</option>
+        <option value="Platform">Platform</option>
+        <option value="Simulator">Simulator</option>
+        <option value="Indie">Indie</option>
+        <option value="Arcade">Arcade</option>
+      </select>
+      <select class="input" value="{{ sort }}" onChange="{{ onSort }}" style="width: auto; min-width: 124px">
+        <option value="az">A–Z</option>
+        <option value="score">Highest score</option>
+        <option value="recent">Recently added</option>
+      </select>
+      <button onClick="{{ toggleGfn }}" class="btn" style="border-color: {{ gfnBorder }}; color: {{ gfnColor }}; background: {{ gfnBg }}">
+        <svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor"><path d="M215.79,118.17,171.44,32.27A16,16,0,0,0,157.22,24H98.78A16,16,0,0,0,84.56,32.27L40.21,118.17a16,16,0,0,0,0,14.66l44.35,85.9A16,16,0,0,0,98.78,227h58.44a16,16,0,0,0,14.22-8.27l44.35-85.9A16,16,0,0,0,215.79,118.17ZM136,120h32L120,192V136H88l48-72Z"></path></svg>
+        GeForce NOW only
+      </button>
+      <div style="display: flex; align-items: center; gap: 9px; padding-left: 4px; font-size: 12px; color: color-mix(in srgb, var(--color-text) 62%, transparent)">
+        <span style="white-space: nowrap">Score ≥ {{ minScoreLabel }}</span>
+        <input type="range" min="0" max="95" step="5" value="{{ minScore }}" onChange="{{ onMinScore }}" style="width: 92px"/>
+      </div>
+      <div class="seg" style="margin-left: auto">
+        <button onClick="{{ setGrid }}" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer; border: 0; background: transparent; color: {{ gridColor }}; box-shadow: {{ gridShadow }}">
+          <svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor"><path d="M104,40H56A16,16,0,0,0,40,56v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,104,40Zm96,0H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V56A16,16,0,0,0,200,40Zm-96,96H56a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,104,136Zm96,0H152a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16h48a16,16,0,0,0,16-16V152A16,16,0,0,0,200,136Z"></path></svg>
+          Grid
+        </button>
+        <button onClick="{{ setRows }}" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; font: inherit; font-size: 13px; cursor: pointer; border: 0; border-left: 1px solid var(--color-divider); background: transparent; color: {{ rowsColor }}; box-shadow: {{ rowsShadow }}">
+          <svg viewBox="0 0 256 256" width="14" height="14" fill="currentColor"><path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128ZM40,72H216a8,8,0,0,0,0-16H40a8,8,0,0,0,0,16ZM216,184H40a8,8,0,0,0,0,16H216a8,8,0,0,0,0-16Z"></path></svg>
+          Rows
+        </button>
+      </div>
+    </div>
+
+    <div style="height: 1px; margin-bottom: 22px; background: linear-gradient(to right, transparent, var(--color-divider) 48px, var(--color-divider) calc(100% - 48px), transparent)"></div>
+
+    <sc-if value="{{ isGrid }}" hint-placeholder-val="{{ true }}">
+      <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(172px, 1fr)); gap: 20px 16px">
+        <sc-for list="{{ visible }}" as="g" hint-placeholder-count="12">
+          <div onClick="{{ g.open }}" style="cursor: pointer; display: flex; flex-direction: column; gap: 9px">
+            <div style="position: relative; aspect-ratio: 3 / 4; border-radius: 8px; background: var(--color-surface); box-shadow: var(--shadow-sm); display: grid; place-items: center; overflow: hidden">
+              <span style="font-family: var(--font-heading); font-size: 30px; letter-spacing: 0.02em; color: var(--color-neutral-700)">{{ g.initials }}</span>
+              <span style="position: absolute; bottom: 7px; left: 8px; font-size: 9px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--color-neutral-800)">cover</span>
+              <sc-if value="{{ g.gfn }}" hint-placeholder-val="{{ false }}">
+                <span title="Confirmed on GeForce NOW" style="position: absolute; top: 7px; right: 7px; display: inline-flex; align-items: center; gap: 3px; padding: 3px 6px; border-radius: 6px; font-size: 9px; letter-spacing: 0.06em; background: #1d2a14; color: #a3d95a; box-shadow: inset 0 0 0 1px #3f5c22">
+                  <svg viewBox="0 0 256 256" width="9" height="9" fill="currentColor"><path d="M215.79,118.17,171.44,32.27A16,16,0,0,0,157.22,24H98.78A16,16,0,0,0,84.56,32.27L40.21,118.17a16,16,0,0,0,0,14.66l44.35,85.9A16,16,0,0,0,98.78,227h58.44a16,16,0,0,0,14.22-8.27l44.35-85.9A16,16,0,0,0,215.79,118.17ZM136,120h32L120,192V136H88l48-72Z"></path></svg>
+                  GFN
+                </span>
+              </sc-if>
+              <sc-if value="{{ g.hasScore }}" hint-placeholder-val="{{ false }}">
+                <span style="position: absolute; bottom: 7px; right: 7px; padding: 2px 6px; border-radius: 6px; font-size: 10px; font-variant-numeric: tabular-nums; background: color-mix(in srgb, var(--color-bg) 78%, transparent); color: var(--color-neutral-300); box-shadow: inset 0 0 0 1px var(--color-neutral-800)">{{ g.score }}</span>
+              </sc-if>
+            </div>
+            <div style="font-size: 13px; line-height: 1.3; text-wrap: pretty">{{ g.title }}</div>
+            <div style="font-size: 11px; color: color-mix(in srgb, var(--color-text) 45%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ g.genresShort }}</div>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px">
+              <sc-for list="{{ g.stores }}" as="s" hint-placeholder-count="2">
+                <span title="{{ s.label }}" style="display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 7px; border-radius: 6px; font-size: 10px; letter-spacing: 0.02em; background: var(--color-neutral-900); color: var(--color-neutral-300); box-shadow: inset 0 0 0 1px var(--color-neutral-800)">
+                  <span style="font-family: var(--font-heading); font-weight: 600; font-size: 10px; color: var(--color-accent-400)">{{ s.mark }}</span>
+                  {{ s.name }}
+                </span>
+              </sc-for>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isRows }}" hint-placeholder-val="{{ false }}">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="width: 46%">Game</th>
+            <th style="width: 64px">Score</th>
+            <th>Genres</th>
+            <th style="width: 190px">Stores</th>
+          </tr>
+        </thead>
+        <tbody>
+          <sc-for list="{{ visible }}" as="g" hint-placeholder-count="8">
+            <tr onClick="{{ g.open }}" style="cursor: pointer">
+              <td style="padding: 9px 8px">
+                <div style="display: flex; align-items: center; gap: 12px">
+                  <div style="flex: none; width: 34px; height: 45px; border-radius: 5px; background: var(--color-surface); box-shadow: var(--shadow-sm); display: grid; place-items: center; font-size: 12px; font-family: var(--font-heading); color: var(--color-neutral-700)">{{ g.initials }}</div>
+                  <span style="font-size: 14px">{{ g.title }}</span>
+                  <sc-if value="{{ g.gfn }}" hint-placeholder-val="{{ false }}">
+                    <svg viewBox="0 0 256 256" width="13" height="13" fill="currentColor" style="flex: none; color: #a3d95a"><path d="M215.79,118.17,171.44,32.27A16,16,0,0,0,157.22,24H98.78A16,16,0,0,0,84.56,32.27L40.21,118.17a16,16,0,0,0,0,14.66l44.35,85.9A16,16,0,0,0,98.78,227h58.44a16,16,0,0,0,14.22-8.27l44.35-85.9A16,16,0,0,0,215.79,118.17ZM136,120h32L120,192V136H88l48-72Z"></path></svg>
+                  </sc-if>
+                </div>
+              </td>
+              <td style="font-variant-numeric: tabular-nums; color: var(--color-neutral-400)">{{ g.score }}</td>
+              <td style="font-size: 13px; color: color-mix(in srgb, var(--color-text) 60%, transparent)">{{ g.genresShort }}</td>
+              <td>
+                <div style="display: flex; flex-wrap: wrap; gap: 5px">
+                  <sc-for list="{{ g.stores }}" as="s" hint-placeholder-count="2">
+                    <span title="{{ s.label }}" style="display: inline-flex; align-items: center; gap: 5px; height: 21px; padding: 0 7px; border-radius: 6px; font-size: 10px; background: var(--color-neutral-900); color: var(--color-neutral-300); box-shadow: inset 0 0 0 1px var(--color-neutral-800)">
+                      <span style="font-family: var(--font-heading); font-weight: 600; color: var(--color-accent-400)">{{ s.mark }}</span>
+                      {{ s.name }}
+                    </span>
+                  </sc-for>
+                </div>
+              </td>
+            </tr>
+          </sc-for>
+        </tbody>
+      </table>
+    </sc-if>
+
+    <sc-if value="{{ isEmpty }}" hint-placeholder-val="{{ false }}">
+      <div style="padding: 70px 0; text-align: center; color: color-mix(in srgb, var(--color-text) 45%, transparent); font-size: 14px">No titles match those filters.</div>
+    </sc-if>
+  </main>
+  </sc-if>
+
+  <sc-if value="{{ isUnmatched }}" hint-placeholder-val="{{ false }}">
+  <main style="max-width: 1000px; padding: 0 28px">
+    <div style="padding: 34px 0 8px">
+      <h1 style="font-size: 34px; margin: 0; letter-spacing: -0.02em">Unmatched</h1>
+      <p style="max-width: 52ch; margin-top: 10px; font-size: 14px; color: color-mix(in srgb, var(--color-text) 55%, transparent)">Store entries with no metadata match. Confirm a suggestion or search manually.</p>
+    </div>
+    <table class="table" style="margin-top: 14px">
+      <thead>
+        <tr><th style="width: 34%">Store entry</th><th style="width: 90px">Source</th><th>Suggested match</th><th style="width: 92px">Confidence</th><th style="width: 168px"></th></tr>
+      </thead>
+      <tbody>
+        <sc-for list="{{ unmatched }}" as="u" hint-placeholder-count="6">
+          <tr>
+            <td style="font-size: 14px">{{ u.raw }}</td>
+            <td><span class="tag tag-neutral">{{ u.source }}</span></td>
+            <td style="font-size: 13px; color: color-mix(in srgb, var(--color-text) 70%, transparent)">{{ u.suggestion }}</td>
+            <td style="font-variant-numeric: tabular-nums; font-size: 13px; color: {{ u.confColor }}">{{ u.confidence }}</td>
+            <td>
+              <div style="display: flex; gap: 6px; justify-content: flex-end">
+                <button class="btn btn-primary" style="font-size: 12px; padding: 4px 10px">Confirm</button>
+                <button class="btn btn-secondary" style="font-size: 12px; padding: 4px 10px">Search</button>
+              </div>
+            </td>
+          </tr>
+        </sc-for>
+      </tbody>
+    </table>
+  </main>
+  </sc-if>
+
+  <sc-if value="{{ isDiscover }}" hint-placeholder-val="{{ false }}">
+  <main style="max-width: 1240px; padding: 0 28px">
+    <div style="padding: 34px 0 8px">
+      <h1 style="font-size: 34px; margin: 0; letter-spacing: -0.02em">Discover</h1>
+      <p style="max-width: 56ch; margin-top: 10px; font-size: 14px; color: color-mix(in srgb, var(--color-text) 55%, transparent)">Titles you don't own, drawn from the genres you already keep. Streamable picks are marked.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; margin-top: 22px">
+      <sc-for list="{{ discover }}" as="d" hint-placeholder-count="6">
+        <div class="card elev-sm">
+          <div style="display: flex; gap: 12px">
+            <div style="flex: none; width: 52px; height: 70px; border-radius: 6px; background: var(--color-bg); display: grid; place-items: center; font-family: var(--font-heading); font-size: 15px; color: var(--color-neutral-700)">{{ d.initials }}</div>
+            <div style="min-width: 0">
+              <div class="card-title" style="font-size: 15px">{{ d.title }}</div>
+              <div style="margin-top: 4px; font-size: 11px; color: color-mix(in srgb, var(--color-text) 45%, transparent)">{{ d.genres }}</div>
+              <div style="margin-top: 8px; display: flex; align-items: center; gap: 6px">
+                <span class="tag tag-neutral" style="font-variant-numeric: tabular-nums">{{ d.score }}</span>
+                <sc-if value="{{ d.gfn }}" hint-placeholder-val="{{ false }}">
+                  <span class="tag" style="background: #1d2a14; color: #a3d95a; box-shadow: inset 0 0 0 1px #3f5c22">GFN</span>
+                </sc-if>
+              </div>
+            </div>
+          </div>
+          <div class="card-meta" style="justify-content: space-between; margin-top: 4px">
+            <span>{{ d.reason }}</span>
+            <button class="btn btn-ghost" style="font-size: 12px">Wishlist</button>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </main>
+  </sc-if>
+
+  <sc-if value="{{ isXbox }}" hint-placeholder-val="{{ false }}">
+  <main style="max-width: 1000px; padding: 0 28px">
+    <div style="padding: 34px 0 8px">
+      <h1 style="font-size: 34px; margin: 0; letter-spacing: -0.02em">Xbox</h1>
+      <p style="max-width: 54ch; margin-top: 10px; font-size: 14px; color: color-mix(in srgb, var(--color-text) 55%, transparent)">Owned Xbox titles and current Game Pass rotation, kept separate from purchases.</p>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 12px; margin: 22px 0 26px">
+      <div class="card elev-sm" style="flex: 1 1 180px"><div style="font-size: 26px; font-family: var(--font-heading); font-variant-numeric: tabular-nums">48</div><div class="card-meta">Owned on Xbox</div></div>
+      <div class="card elev-sm" style="flex: 1 1 180px"><div style="font-size: 26px; font-family: var(--font-heading); font-variant-numeric: tabular-nums">126</div><div class="card-meta">In Game Pass now</div></div>
+      <div class="card elev-sm" style="flex: 1 1 180px"><div style="font-size: 26px; font-family: var(--font-heading); font-variant-numeric: tabular-nums">9</div><div class="card-meta">Leaving within 30 days</div></div>
+      <div class="card elev-sm" style="flex: 1 1 180px"><div style="font-size: 26px; font-family: var(--font-heading); font-variant-numeric: tabular-nums; color: var(--color-accent-400)">31</div><div class="card-meta">Also streamable on GFN</div></div>
+    </div>
+    <h4 style="margin-bottom: 12px">Leaving Game Pass soon</h4>
+    <table class="table">
+      <thead><tr><th>Title</th><th style="width: 110px">Leaves</th><th style="width: 130px">Owned elsewhere</th></tr></thead>
+      <tbody>
+        <sc-for list="{{ xboxLeaving }}" as="x" hint-placeholder-count="5">
+          <tr><td style="font-size: 14px">{{ x.title }}</td><td style="font-size: 13px; color: var(--color-neutral-400)">{{ x.leaves }}</td><td style="font-size: 13px; color: color-mix(in srgb, var(--color-text) 60%, transparent)">{{ x.owned }}</td></tr>
+        </sc-for>
+      </tbody>
+    </table>
+  </main>
+  </sc-if>
+
+  <sc-if value="{{ isConnect }}" hint-placeholder-val="{{ false }}">
+  <main style="max-width: 780px; padding: 0 28px">
+    <div style="padding: 34px 0 8px">
+      <h1 style="font-size: 34px; margin: 0; letter-spacing: -0.02em">Connect</h1>
+      <p style="max-width: 52ch; margin-top: 10px; font-size: 14px; color: color-mix(in srgb, var(--color-text) 55%, transparent)">Linked stores and the last time each one was read.</p>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 22px">
+      <sc-for list="{{ connections }}" as="c" hint-placeholder-count="4">
+        <div class="card elev-sm" style="flex-direction: row; align-items: center; gap: 16px; padding: 14px 16px">
+          <div style="flex: none; width: 38px; height: 38px; border-radius: 8px; display: grid; place-items: center; background: var(--color-bg); font-family: var(--font-heading); font-weight: 600; font-size: 14px; color: var(--color-accent-400); box-shadow: inset 0 0 0 1px var(--color-neutral-800)">{{ c.mark }}</div>
+          <div style="flex: 1; min-width: 0">
+            <div style="font-size: 15px; font-family: var(--font-heading)">{{ c.name }}</div>
+            <div style="font-size: 12px; color: color-mix(in srgb, var(--color-text) 48%, transparent)">{{ c.detail }}</div>
+          </div>
+          <span class="tag" style="background: {{ c.tagBg }}; color: {{ c.tagColor }}">{{ c.status }}</span>
+          <button class="btn btn-secondary" style="font-size: 12px">{{ c.action }}</button>
+        </div>
+      </sc-for>
+    </div>
+  </main>
+  </sc-if>
+
+  <sc-if value="{{ selected }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeGame }}" style="position: fixed; inset: 0; z-index: 40; background: color-mix(in srgb, var(--color-neutral-900) 55%, transparent)"></div>
+    <aside style="position: fixed; z-index: 41; top: 0; right: 0; bottom: 0; width: min(430px, 100%); overflow: auto; padding: 24px; background: var(--color-surface); box-shadow: var(--shadow-lg)">
+      <div style="display: flex; justify-content: flex-end">
+        <button onClick="{{ closeGame }}" class="btn btn-icon btn-secondary" aria-label="Close">
+          <svg viewBox="0 0 256 256" width="15" height="15" fill="currentColor"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"></path></svg>
+        </button>
+      </div>
+      <div style="width: 132px; aspect-ratio: 3 / 4; margin-top: 4px; border-radius: 8px; background: var(--color-bg); display: grid; place-items: center; font-family: var(--font-heading); font-size: 26px; color: var(--color-neutral-700)">{{ selected.initials }}</div>
+      <h3 style="margin: 18px 0 0; font-size: 23px; text-wrap: pretty">{{ selected.title }}</h3>
+      <div style="display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: color-mix(in srgb, var(--color-text) 50%, transparent)">
+        <span>{{ selected.year }}</span><span>·</span><span>{{ selected.scoreLine }}</span><span>·</span><span>{{ selected.hoursLine }}</span>
+      </div>
+      <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px">
+        <sc-for list="{{ selected.genreList }}" as="gn" hint-placeholder-count="3">
+          <span class="tag tag-neutral">{{ gn }}</span>
+        </sc-for>
+      </div>
+      <div style="height: 1px; margin: 20px 0; background: var(--color-divider)"></div>
+      <h6 style="margin-bottom: 10px; color: color-mix(in srgb, var(--color-text) 55%, transparent)">Owned on</h6>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <sc-for list="{{ selected.stores }}" as="s" hint-placeholder-count="2">
+          <div style="display: flex; align-items: center; gap: 11px; padding: 9px 11px; border-radius: 8px; background: var(--color-bg)">
+            <span style="flex: none; width: 26px; height: 26px; border-radius: 6px; display: grid; place-items: center; font-family: var(--font-heading); font-weight: 600; font-size: 11px; color: var(--color-accent-400); box-shadow: inset 0 0 0 1px var(--color-neutral-800)">{{ s.mark }}</span>
+            <span style="flex: 1; font-size: 13px">{{ s.label }}</span>
+            <span style="font-size: 11px; color: color-mix(in srgb, var(--color-text) 42%, transparent)">{{ s.detail }}</span>
+          </div>
+        </sc-for>
+      </div>
+      <h6 style="margin: 20px 0 10px; color: color-mix(in srgb, var(--color-text) 55%, transparent)">GeForce NOW</h6>
+      <div style="display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-radius: 8px; background: var(--color-bg); color: {{ selected.gfnColor }}">
+        <svg viewBox="0 0 256 256" width="15" height="15" fill="currentColor"><path d="M215.79,118.17,171.44,32.27A16,16,0,0,0,157.22,24H98.78A16,16,0,0,0,84.56,32.27L40.21,118.17a16,16,0,0,0,0,14.66l44.35,85.9A16,16,0,0,0,98.78,227h58.44a16,16,0,0,0,14.22-8.27l44.35-85.9A16,16,0,0,0,215.79,118.17ZM136,120h32L120,192V136H88l48-72Z"></path></svg>
+        <span style="font-size: 13px">{{ selected.gfnLine }}</span>
+      </div>
+      <div style="display: flex; gap: 8px; margin-top: 24px">
+        <button class="btn btn-primary">{{ selected.primaryAction }}</button>
+        <button class="btn btn-secondary">Open store page</button>
+      </div>
+    </aside>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;storeDisplay&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Logo only&quot;,&quot;Logo + name&quot;],&quot;default&quot;:&quot;Logo + name&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Library&quot;},&quot;defaultView&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Grid&quot;,&quot;Rows&quot;],&quot;default&quot;:&quot;Grid&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Library&quot;},&quot;showScores&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Library&quot;}}">
+const STORES = {
+  steam: { mark: "S", name: "Steam", label: "Steam" },
+  epic: { mark: "E", name: "Epic", label: "Epic Games Store" },
+  gog: { mark: "G", name: "GOG", label: "GOG.com" },
+  xbox: { mark: "X", name: "Xbox", label: "Xbox / PC Game Pass" }
+};
+
+const GAMES = [
+  { id: 1, title: "112 Operator", score: 74, genres: ["Puzzle", "Simulator", "Strategy", "Indie"], stores: ["epic"], gfn: false, year: 2020, hours: 6 },
+  { id: 2, title: "20 Minutes Till Dawn", score: 79, genres: ["Shooter", "Role-playing (RPG)", "Strategy", "Adventure", "Indie", "Arcade"], stores: ["epic"], gfn: false, year: 2022, hours: 14 },
+  { id: 3, title: "A Plague Tale: Innocence", score: 86, genres: ["Adventure"], stores: ["gog", "epic"], gfn: true, year: 2019, hours: 17 },
+  { id: 4, title: "A Rat's Quest: The Way Back Home", score: 0, genres: ["Adventure", "Platform"], stores: ["epic"], gfn: false, year: 2023, hours: 0 },
+  { id: 5, title: "Advanced Dungeons & Dragons: Pool of Radiance", score: 71, genres: ["Role-playing (RPG)", "Strategy", "Adventure"], stores: ["gog"], gfn: false, year: 1988, hours: 3 },
+  { id: 6, title: "Aerial_Knight's Never Yield", score: 68, genres: ["Music", "Platform", "Adventure", "Indie", "Arcade"], stores: ["epic"], gfn: false, year: 2021, hours: 2 },
+  { id: 7, title: "Age of Empires III: Complete Collection", score: 82, genres: ["Real Time Strategy (RTS)", "Simulator", "Strategy"], stores: ["steam"], gfn: false, year: 2007, hours: 41 },
+  { id: 8, title: "Alan Wake 2", score: 89, genres: ["Adventure", "Shooter"], stores: ["epic"], gfn: true, year: 2023, hours: 22 },
+  { id: 9, title: "Baldur's Gate 3", score: 96, genres: ["Role-playing (RPG)", "Strategy", "Adventure"], stores: ["steam", "gog"], gfn: true, year: 2023, hours: 118 },
+  { id: 10, title: "Celeste", score: 91, genres: ["Platform", "Indie"], stores: ["steam", "epic"], gfn: false, year: 2018, hours: 26 },
+  { id: 11, title: "Control Ultimate Edition", score: 85, genres: ["Shooter", "Adventure"], stores: ["epic", "steam"], gfn: true, year: 2019, hours: 19 },
+  { id: 12, title: "Cyberpunk 2077", score: 87, genres: ["Role-playing (RPG)", "Shooter", "Adventure"], stores: ["gog", "steam"], gfn: true, year: 2020, hours: 74 },
+  { id: 13, title: "Death Stranding", score: 84, genres: ["Adventure", "Simulator"], stores: ["steam"], gfn: true, year: 2019, hours: 38 },
+  { id: 14, title: "Dishonored 2", score: 88, genres: ["Shooter", "Adventure"], stores: ["steam", "xbox"], gfn: false, year: 2016, hours: 24 },
+  { id: 15, title: "Disco Elysium: The Final Cut", score: 92, genres: ["Role-playing (RPG)", "Indie", "Adventure"], stores: ["gog", "epic"], gfn: false, year: 2021, hours: 33 },
+  { id: 16, title: "Doom Eternal", score: 90, genres: ["Shooter", "Arcade"], stores: ["steam", "xbox"], gfn: true, year: 2020, hours: 21 },
+  { id: 17, title: "Forza Horizon 5", score: 89, genres: ["Racing", "Simulator", "Arcade"], stores: ["xbox", "steam"], gfn: false, year: 2021, hours: 47 },
+  { id: 18, title: "Frostpunk", score: 83, genres: ["Strategy", "Simulator", "Indie"], stores: ["gog"], gfn: false, year: 2018, hours: 16 },
+  { id: 19, title: "Hades", score: 93, genres: ["Role-playing (RPG)", "Indie", "Arcade"], stores: ["steam", "epic"], gfn: true, year: 2020, hours: 58 },
+  { id: 20, title: "Half-Life: Alyx", score: 92, genres: ["Shooter", "Adventure"], stores: ["steam"], gfn: false, year: 2020, hours: 13 },
+  { id: 21, title: "Hollow Knight", score: 94, genres: ["Platform", "Adventure", "Indie"], stores: ["steam", "gog"], gfn: false, year: 2017, hours: 62 },
+  { id: 22, title: "Kingdom Come: Deliverance", score: 78, genres: ["Role-playing (RPG)", "Adventure", "Simulator"], stores: ["gog", "epic", "steam"], gfn: true, year: 2018, hours: 29 },
+  { id: 23, title: "Outer Wilds", score: 95, genres: ["Adventure", "Puzzle", "Indie"], stores: ["epic", "steam"], gfn: true, year: 2019, hours: 31 },
+  { id: 24, title: "Return of the Obra Dinn", score: 89, genres: ["Puzzle", "Adventure", "Indie"], stores: ["gog"], gfn: false, year: 2018, hours: 9 },
+  { id: 25, title: "Sekiro: Shadows Die Twice", score: 90, genres: ["Adventure", "Role-playing (RPG)"], stores: ["steam"], gfn: true, year: 2019, hours: 44 },
+  { id: 26, title: "Slay the Spire", score: 89, genres: ["Strategy", "Indie", "Turn-based strategy (TBS)"], stores: ["steam", "epic"], gfn: false, year: 2019, hours: 87 },
+  { id: 27, title: "Stardew Valley", score: 92, genres: ["Simulator", "Role-playing (RPG)", "Indie"], stores: ["steam", "gog", "xbox"], gfn: false, year: 2016, hours: 152 },
+  { id: 28, title: "The Witcher 3: Wild Hunt", score: 96, genres: ["Role-playing (RPG)", "Adventure"], stores: ["gog", "steam", "xbox"], gfn: true, year: 2015, hours: 96 },
+  { id: 29, title: "Tunic", score: 86, genres: ["Puzzle", "Adventure", "Indie"], stores: ["xbox", "steam"], gfn: false, year: 2022, hours: 12 },
+  { id: 30, title: "Vampire Survivors", score: 87, genres: ["Arcade", "Indie", "Shooter"], stores: ["steam", "xbox"], gfn: false, year: 2022, hours: 41 }
+];
+
+const TOTAL = 614;
+
+class Component extends DCLogic {
+  state = {
+    page: "library", view: null, q: "", store: "all", genre: "all",
+    sort: "az", minScore: 0, gfnOnly: false, selectedId: null
+  };
+
+  initials(title) {
+    const words = title.replace(/[^A-Za-z0-9: ]/g, " ").split(/\s+/).filter(Boolean);
+    return (words.slice(0, 2).map(w => w[0]).join("") || "?").toUpperCase();
+  }
+
+  storePills(keys, withNames) {
+    return keys.map(k => ({
+      mark: STORES[k].mark,
+      name: withNames ? STORES[k].name : "",
+      label: STORES[k].label,
+      detail: k === "xbox" ? "Game Pass" : "Purchased"
+    }));
+  }
+
+  renderVals() {
+    const s = this.state;
+    const withNames = (this.props.storeDisplay ?? "Logo + name") === "Logo + name";
+    const showScores = this.props.showScores ?? true;
+    const view = s.view || ((this.props.defaultView ?? "Grid") === "Rows" ? "rows" : "grid");
+    const q = s.q.trim().toLowerCase();
+
+    let list = GAMES.filter(g =>
+      (!q || g.title.toLowerCase().includes(q)) &&
+      (s.store === "all" || g.stores.includes(s.store)) &&
+      (s.genre === "all" || g.genres.includes(s.genre)) &&
+      (!s.gfnOnly || g.gfn) &&
+      (s.minScore === 0 || g.score >= s.minScore)
+    );
+    if (s.sort === "az") list = list.slice().sort((a, b) => a.title.localeCompare(b.title));
+    if (s.sort === "score") list = list.slice().sort((a, b) => b.score - a.score);
+    if (s.sort === "recent") list = list.slice().sort((a, b) => b.year - a.year || a.title.localeCompare(b.title));
+
+    const visible = list.map(g => ({
+      title: g.title,
+      initials: this.initials(g.title),
+      genresShort: g.genres.slice(0, 3).join(", "),
+      score: showScores && g.score ? String(g.score) : "",
+      hasScore: showScores && g.score > 0,
+      gfn: g.gfn,
+      stores: this.storePills(g.stores, withNames),
+      open: () => this.setState({ selectedId: g.id })
+    }));
+
+    const sel = GAMES.find(g => g.id === s.selectedId);
+    const selected = sel ? {
+      title: sel.title,
+      initials: this.initials(sel.title),
+      year: String(sel.year),
+      scoreLine: sel.score ? sel.score + " score" : "No score",
+      hoursLine: sel.hours ? sel.hours + " h played" : "Never played",
+      genreList: sel.genres,
+      stores: this.storePills(sel.stores, true),
+      gfnLine: sel.gfn ? "Confirmed streamable — 4K / 120 fps tier" : "Not available on GeForce NOW",
+      gfnColor: sel.gfn ? "#a3d95a" : "color-mix(in srgb, var(--color-text) 50%, transparent)",
+      primaryAction: sel.gfn ? "Stream now" : "Launch locally"
+    } : null;
+
+    const navOn = p => s.page === p;
+    const nav = p => ({
+      color: navOn(p) ? "var(--color-accent)" : "color-mix(in srgb, var(--color-text) 72%, transparent)",
+      bg: navOn(p) ? "var(--color-accent-900)" : "transparent"
+    });
+
+    return {
+      isLibrary: s.page === "library", isUnmatched: s.page === "unmatched",
+      isDiscover: s.page === "discover", isXbox: s.page === "xbox", isConnect: s.page === "connect",
+      goLibrary: () => this.setState({ page: "library" }),
+      goUnmatched: () => this.setState({ page: "unmatched" }),
+      goDiscover: () => this.setState({ page: "discover" }),
+      goXbox: () => this.setState({ page: "xbox" }),
+      goConnect: () => this.setState({ page: "connect" }),
+      navLibraryColor: nav("library").color, navLibraryBg: nav("library").bg,
+      navUnmatchedColor: nav("unmatched").color, navUnmatchedBg: nav("unmatched").bg,
+      navDiscoverColor: nav("discover").color, navDiscoverBg: nav("discover").bg,
+      navXboxColor: nav("xbox").color, navXboxBg: nav("xbox").bg,
+      navConnectColor: nav("connect").color, navConnectBg: nav("connect").bg,
+
+      countLabel: list.length + " of " + TOTAL + " titles",
+      q: s.q, store: s.store, genre: s.genre, sort: s.sort,
+      minScore: s.minScore, minScoreLabel: s.minScore === 0 ? "any" : String(s.minScore),
+      onQuery: e => this.setState({ q: e.target.value }),
+      onStore: e => this.setState({ store: e.target.value }),
+      onGenre: e => this.setState({ genre: e.target.value }),
+      onSort: e => this.setState({ sort: e.target.value }),
+      onMinScore: e => this.setState({ minScore: Number(e.target.value) }),
+      toggleGfn: () => this.setState({ gfnOnly: !s.gfnOnly }),
+      gfnBorder: s.gfnOnly ? "#5d8a2c" : "var(--color-divider)",
+      gfnColor: s.gfnOnly ? "#a3d95a" : "color-mix(in srgb, var(--color-text) 75%, transparent)",
+      gfnBg: s.gfnOnly ? "#1d2a14" : "transparent",
+
+      isGrid: view === "grid", isRows: view === "rows", isEmpty: list.length === 0,
+      setGrid: () => this.setState({ view: "grid" }),
+      setRows: () => this.setState({ view: "rows" }),
+      gridColor: view === "grid" ? "var(--color-accent)" : "color-mix(in srgb, var(--color-text) 70%, transparent)",
+      rowsColor: view === "rows" ? "var(--color-accent)" : "color-mix(in srgb, var(--color-text) 70%, transparent)",
+      gridShadow: view === "grid" ? "inset 0 0 0 1px var(--color-accent)" : "none",
+      rowsShadow: view === "rows" ? "inset 0 0 0 1px var(--color-accent)" : "none",
+
+      visible, selected,
+      closeGame: () => this.setState({ selectedId: null }),
+
+      unmatched: [
+        { raw: "SOMA_Soundtrack_FLAC", source: "GOG", suggestion: "SOMA — soundtrack (tool)", confidence: "0.41" },
+        { raw: "[REDACTED]", source: "Epic", suggestion: "[REDACTED] (2024)", confidence: "0.88" },
+        { raw: "A ponte", source: "Epic", suggestion: "A Ponte (itch demo)", confidence: "0.52" },
+        { raw: "tomb_raider_goty_1996", source: "Steam", suggestion: "Tomb Raider I (1996)", confidence: "0.79" },
+        { raw: "Prologue - Trial Version", source: "Steam", suggestion: "— no match", confidence: "0.12" },
+        { raw: "GW2_Client_Setup", source: "Other", suggestion: "Guild Wars 2", confidence: "0.63" }
+      ].map(u => ({ ...u, confColor: Number(u.confidence) >= 0.75 ? "var(--color-accent-300)" : "var(--color-neutral-500)" })),
+
+      discover: [
+        { title: "Pentiment", initials: "PE", genres: "Adventure, Role-playing (RPG)", score: "88", gfn: true, reason: "You keep narrative RPGs" },
+        { title: "Dave the Diver", initials: "DT", genres: "Simulator, Adventure, Indie", score: "89", gfn: false, reason: "Like Stardew Valley" },
+        { title: "Chants of Sennaar", initials: "CS", genres: "Puzzle, Indie", score: "86", gfn: false, reason: "Like Obra Dinn" },
+        { title: "Slay the Princess", initials: "SP", genres: "Adventure, Indie", score: "90", gfn: false, reason: "Top rated in your genres" },
+        { title: "Against the Storm", initials: "AT", genres: "Strategy, Simulator", score: "91", gfn: true, reason: "Like Frostpunk" },
+        { title: "Hi-Fi Rush", initials: "HR", genres: "Music, Arcade, Platform", score: "88", gfn: true, reason: "In Game Pass now" }
+      ],
+
+      xboxLeaving: [
+        { title: "Persona 5 Royal", leaves: "14 Sep", owned: "—" },
+        { title: "Chained Echoes", leaves: "18 Sep", owned: "Steam" },
+        { title: "Gotham Knights", leaves: "22 Sep", owned: "—" },
+        { title: "Firewatch", leaves: "30 Sep", owned: "GOG" },
+        { title: "Toem", leaves: "02 Oct", owned: "Epic" }
+      ],
+
+      connections: [
+        { mark: "S", name: "Steam", detail: "412 titles · synced 2 hours ago", status: "Connected", action: "Resync" },
+        { mark: "E", name: "Epic Games Store", detail: "137 titles · synced 2 hours ago", status: "Connected", action: "Resync" },
+        { mark: "G", name: "GOG.com", detail: "65 titles · synced yesterday", status: "Connected", action: "Resync" },
+        { mark: "X", name: "Xbox / PC Game Pass", detail: "Token expired 3 days ago", status: "Reauth needed", action: "Reconnect" }
+      ].map(c => ({
+        ...c,
+        tagBg: c.status === "Connected" ? "var(--color-neutral-800)" : "var(--color-accent-800)",
+        tagColor: c.status === "Connected" ? "var(--color-neutral-100)" : "var(--color-accent-100)"
+      }))
+    };
+  }
+}
+</script>
+</body>
+</html>

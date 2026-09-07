@@ -30,11 +30,12 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
 
   const now = new Date().toISOString();
   const upsert = db.prepare(
-    `INSERT INTO entitlement (store, store_game_id, store_title, alt_id, game_id, first_seen, last_seen)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO entitlement (store, store_game_id, store_title, alt_id, playtime_minutes, game_id, first_seen, last_seen)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (store, store_game_id) DO UPDATE SET
-          store_title = excluded.store_title,
-          alt_id      = excluded.alt_id,
+          store_title      = excluded.store_title,
+          alt_id           = excluded.alt_id,
+          playtime_minutes = coalesce(excluded.playtime_minutes, entitlement.playtime_minutes),
           last_seen   = excluded.last_seen,
           game_id     = CASE WHEN entitlement.locked = 1 THEN entitlement.game_id ELSE excluded.game_id END`,
   );
@@ -42,7 +43,7 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
   // game_id is left null: matchEntitlements owns the assignment. Guessing a
   // Game here only to overwrite it a moment later abandons the row it created.
   for (const e of entitlements) {
-    upsert.run(store, e.store_game_id, e.store_title, e.alt_id ?? null, null, now, now);
+    upsert.run(store, e.store_game_id, e.store_title, e.alt_id ?? null, e.playtime_minutes ?? null, null, now, now);
   }
 
   await matchEntitlements(db, store, identify, identifyByName);

@@ -166,7 +166,7 @@ export async function artwork(db, igdbIds) {
     const rows = await query(
       db,
       "games",
-      `fields id,cover.image_id,genres.name; where id = (${batch.join(",")}); limit 500;`,
+      `fields id,cover.image_id,genres.name,first_release_date; where id = (${batch.join(",")}); limit 500;`,
     );
     for (const r of rows) {
       art.set(r.id, {
@@ -174,6 +174,7 @@ export async function artwork(db, igdbIds) {
           ? `https://images.igdb.com/igdb/image/upload/t_cover_big/${r.cover.image_id}.jpg`
           : null,
         genres: (r.genres ?? []).map((g) => g.name).join(", ") || null,
+        year: r.first_release_date ? new Date(r.first_release_date * 1000).getUTCFullYear() : null,
       });
     }
     await pause();

@@ -16,6 +16,7 @@ export async function fetchOwnedGames({ api_key, steam_id }) {
   return response.games.map((g) => ({
     store_game_id: String(g.appid),
     store_title: g.name,
+    playtime_minutes: g.playtime_forever ?? 0,
   }));
 }
 

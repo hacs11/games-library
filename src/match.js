@@ -167,10 +167,10 @@ export async function enrichGames(db, fetchArtwork) {
   if (identified.length > 0) {
     try {
       const art = await fetchArtwork(db, identified.map((g) => g.igdb_id));
-      const set = db.prepare("UPDATE game SET cover_url = ?, genres = ? WHERE id = ?");
+      const set = db.prepare("UPDATE game SET cover_url = ?, genres = ?, year = ? WHERE id = ?");
       for (const g of identified) {
         const hit = art.get(g.igdb_id);
-        if (hit) set.run(hit.cover_url, hit.genres, g.id);
+        if (hit) set.run(hit.cover_url, hit.genres, hit.year ?? null, g.id);
       }
     } catch (err) {
       // Art is decoration; a failure here must not fail a Sync.
