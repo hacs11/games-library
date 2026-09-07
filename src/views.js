@@ -24,13 +24,16 @@ export const layout = (title, body, pending = 0) => `<!doctype html>
   .review { font-size: 1.3rem; margin: 1rem 0 .25rem; }
   .review small { display: block; font-size: .8rem; opacity: .7; font-weight: normal; }
   .actions { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; }
+  textarea { font: inherit; width: 100%; max-width: 40rem; min-height: 9rem; padding: .4rem; }
+  td form { display: inline; }
+  td button { font: inherit; font-size: .8rem; padding: 0 .4rem; }
   .store { font-size: .8rem; border: 1px solid; border-radius: .5rem; padding: 0 .4rem; margin-right: .25rem; white-space: nowrap; }
   .store.gfn { border-color: #76b900; color: #76b900; font-weight: 600; }
   .filters { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
   .filters input[type=search], .filters select { width: auto; font: inherit; padding: .3rem; }
 </style>
 <h1>Games Library</h1>
-<nav><a href="/">Library</a><a href="/unmatched">Unmatched${pending ? ` (${pending})` : ""}</a><a href="/connect">Connect</a></nav>
+<nav><a href="/">Library</a><a href="/unmatched">Unmatched${pending ? ` (${pending})` : ""}</a><a href="/xbox">Xbox</a><a href="/connect">Connect</a></nav>
 ${body}
 `;
 
@@ -40,7 +43,7 @@ const STORE_NAMES = { steam: "Steam", gog: "GOG", epic: "Epic", xbox: "Xbox" };
 // confirmed streamable. Matching is by title for every Store but Steam, so no
 // bolt means "not found in the catalogue", never "will not stream".
 const badge = ({ store, status }) =>
-  `<span class="store${status === "AVAILABLE" ? " gfn" : ""}" title="${status ? `GeForce NOW: ${esc(status)}` : "Not in NVIDIA's public list — may still stream"}">${
+  `<span class="store${status === "AVAILABLE" ? " gfn" : ""}" title="${status ? `GeForce NOW: ${esc(status)}` : "Not found in the GeForce NOW catalogue — may still stream"}">${
     esc(STORE_NAMES[store] ?? store)
   }${status === "AVAILABLE" ? " &#9889;" : ""}</span>`;
 
@@ -94,6 +97,11 @@ export const connectPage = (rows) => {
 ${steam?.data ? `<form method="post" action="/sync/steam"><button>Sync Steam</button></form>` : ""}
 ${oauthFieldset(rows, "gog")}
 ${oauthFieldset(rows, "epic")}
+<fieldset>
+  <legend>Xbox</legend>
+  <p class="hint">Xbox has no library API, so Play Anywhere titles are typed in by hand on the
+    <a href="/xbox">Xbox page</a>. Nothing re-checks them.</p>
+</fieldset>
 ${gfnFieldset(rows)}
 ${igdbFieldset(rows)}
 `;
@@ -195,3 +203,32 @@ export const gfnFieldset = (rows) => {
 </fieldset>
 <form method="post" action="/sync/gfn"><button>Sync GeForce NOW</button></form>`;
 };
+
+export const xboxPage = (items) => `
+<p class="hint"><strong>Play Anywhere titles only</strong> — the ones with a PC build tied to the purchase.
+  Console-only and cloud-only games do not belong here: they can be neither installed on this machine nor
+  streamed through a PC store.</p>
+<p class="hint">Xbox publishes no library API, so paste the titles here, one per line. Pasting the same list
+  again is safe; titles are matched on paste, and anything IGDB recognises merges with your other stores
+  automatically.</p>
+<form method="post" action="/xbox/add">
+  <textarea name="pasted" placeholder="Halo Infinite&#10;Forza Horizon 5&#10;Starfield" autofocus required></textarea>
+  <div class="actions"><button>Add titles</button></div>
+</form>
+${
+  items.length === 0
+    ? `<p class="empty">No Xbox games yet.</p>`
+    : `<p class="status">${items.length} Xbox game${items.length === 1 ? "" : "s"}.</p>
+<table>
+  <tr><th>Pasted title</th><th>Matched to</th><th></th></tr>
+  ${items
+    .map(
+      (i) => `<tr>
+    <td>${esc(i.store_title)}${i.gfn_status === "AVAILABLE" ? ` <span class="store gfn">&#9889;</span>` : ""}</td>
+    <td>${i.game && i.game !== i.store_title ? esc(i.game) : ""}</td>
+    <td><form method="post" action="/xbox/remove"><input type="hidden" name="id" value="${i.id}"><button>Remove</button></form></td>
+  </tr>`,
+    )
+    .join("\n  ")}
+</table>`
+}`;

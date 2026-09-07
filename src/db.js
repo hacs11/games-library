@@ -53,16 +53,27 @@ function addColumn(db, table, definition) {
   }
 }
 
-// ponytail: no migrations — the schema only grows by editing SCHEMA and deleting
-// data/library.db. Fine while every row is re-syncable; needs a real migration
-// once Xbox Entitlements (typed by hand, slice 7) live in here.
+// Each migration runs once, in order, tracked by SQLite's own user_version.
+// Everything before this point was expressed as an idempotent bootstrap, which
+// is migration 0. Xbox Entitlements are typed by hand and cannot be re-synced,
+// so "delete the database and start again" is no longer an available answer.
+const MIGRATIONS = [
+  (db) => {
+    db.exec(SCHEMA);
+    addColumn(db, "entitlement", "confidence TEXT");
+    addColumn(db, "entitlement", "alt_id TEXT");
+    addColumn(db, "gfn_entry", "norm_title TEXT");
+  },
+];
+
 export function open(path = "data/library.db") {
   const db = new DatabaseSync(path);
   db.exec("PRAGMA foreign_keys = ON");
-  db.exec(SCHEMA);
-  addColumn(db, "entitlement", "confidence TEXT");
-  addColumn(db, "entitlement", "alt_id TEXT");
-  addColumn(db, "gfn_entry", "norm_title TEXT");
+
+  const { user_version: from } = db.prepare("PRAGMA user_version").get();
+  for (let v = from; v < MIGRATIONS.length; v++) MIGRATIONS[v](db);
+  db.exec(`PRAGMA user_version = ${MIGRATIONS.length}`);
+
   return db;
 }
 

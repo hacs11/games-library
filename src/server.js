@@ -2,12 +2,15 @@ import { createServer } from "node:http";
 import { open, listGames, stores, saveCredential, unmatched, gameTitles } from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
-import { syncGfn } from "./gfn.js";
+import { syncGfn, applyGfn } from "./gfn.js";
+import * as xbox from "./xbox.js";
+import { matchEntitlements } from "./match.js";
+import { identify, identifyByName } from "./igdb.js";
 import * as gog from "./gog.js";
 import * as epic from "./epic.js";
 
 const STORE_OAUTH = { gog, epic };
-import { layout, listPage, connectPage, unmatchedPage } from "./views.js";
+import { layout, listPage, connectPage, unmatchedPage, xboxPage } from "./views.js";
 
 const db = open();
 
@@ -31,6 +34,24 @@ const routes = {
   },
 
   "GET /connect": (_req, res) => html(res, page("Connect", connectPage(stores(db)))),
+
+  "GET /xbox": (_req, res) => html(res, page("Xbox", xboxPage(xbox.list(db)))),
+
+  // Pasted titles are matched immediately: Xbox has no Sync to do it later.
+  "POST /xbox/add": async (req, res) => {
+    const { pasted } = await body(req);
+    if (pasted?.trim()) {
+      xbox.addTitles(db, pasted);
+      await matchEntitlements(db, xbox.XBOX, identify, identifyByName);
+      applyGfn(db);
+    }
+    seeOther(res, "/xbox");
+  },
+
+  "POST /xbox/remove": async (req, res) => {
+    xbox.remove(db, (await body(req)).id);
+    seeOther(res, "/xbox");
+  },
 
   "GET /unmatched": (req, res) => {
     const after = Number(new URL(req.url, "http://x").searchParams.get("after") ?? 0);

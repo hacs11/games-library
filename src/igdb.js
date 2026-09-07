@@ -57,8 +57,13 @@ const pause = () => new Promise((r) => setTimeout(r, 260)); // IGDB allows 4 req
 
 // store uid -> { igdb_id, title } for everything IGDB recognises.
 export async function identify(db, store, uids) {
+  // Xbox Entitlements are typed by hand and carry no store id at all, so there
+  // is nothing to look up. This is a known absence, not the silent-empty bug
+  // below: those Entitlements are identified by title instead.
+  if (!IGDB_SOURCE[store]) return new Map();
+
   const sources = await sourceIds(db);
-  const wanted = IGDB_SOURCE[store]?.toLowerCase();
+  const wanted = IGDB_SOURCE[store].toLowerCase();
   const name = Object.keys(sources).find((n) => n.toLowerCase() === wanted);
   // Never return an empty result here: an unknown source is a configuration
   // bug, and silently falling back to title matching hides it behind a tray

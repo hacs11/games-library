@@ -16,6 +16,10 @@ _Avoid_: Copy, licence, purchase, ownership
 A digital storefront that grants Entitlements: Steam, GOG, Epic, Xbox.
 _Avoid_: Platform, launcher, vendor
 
+**Play Anywhere**:
+The only kind of Xbox Entitlement this library holds — a purchase carrying a PC build alongside the console one. Console-only and cloud-only Xbox titles are out of scope, because they can be neither installed on the Mac nor streamed through a PC store.
+_Avoid_: Cross-buy, Xbox PC, Game Pass
+
 **Sync**:
 A user-triggered fetch of the current Entitlements from one Store, which updates the local record of what that Store says is owned.
 _Avoid_: Import, refresh, scrape
