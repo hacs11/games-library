@@ -127,3 +127,39 @@ test("an ambiguous title is left to clustering rather than guessed at", async ()
   assert.deepEqual([result.named, result.fallback], [0, 1]);
   assert.equal(db.prepare("SELECT confidence FROM entitlement").get().confidence, "title");
 });
+
+test("merging moves a Game's Entitlements and locks the decision", async () => {
+  const db = await seeded("steam", "Agony");
+  saveCredential(db, "epic", { t: 1 });
+  await syncStore(db, "epic", async () => [{ store_game_id: "e1", store_title: "Agony UNRATED" }]);
+  await matchEntitlements(db, "steam", async () => new Map(), async () => new Map());
+  await matchEntitlements(db, "epic", async () => new Map(), async () => new Map());
+
+  const [a, b] = db.prepare("SELECT id, title FROM game ORDER BY title").all();
+  assert.equal(db.prepare("SELECT count(*) c FROM game").get().c, 2);
+
+  const { mergeGames } = await import("./match.js");
+  assert.equal(mergeGames(db, b.id, a.id), true);
+
+  assert.equal(db.prepare("SELECT count(*) c FROM game").get().c, 1, "the merged-away Game is gone");
+  assert.equal(db.prepare("SELECT count(DISTINCT game_id) c FROM entitlement").get().c, 1);
+  assert.deepEqual(
+    // spread: node:sqlite rows have a null prototype, which deepStrictEqual rejects
+    db.prepare("SELECT DISTINCT locked, confidence FROM entitlement WHERE game_id = ?").all(a.id).map((r) => ({ ...r })),
+    [{ locked: 1, confidence: "manual" }],
+    "both sides of the merge are locked, not just the Entitlements that moved",
+  );
+
+  // The point of locking: matching must not undo a decision you made by hand.
+  await matchEntitlements(db, "epic", async () => new Map(), async () => new Map());
+  assert.equal(db.prepare("SELECT count(*) c FROM game").get().c, 1, "a later Sync does not split them");
+});
+
+test("merging refuses nonsense rather than corrupting the library", async () => {
+  const db = await seeded("steam", "Agony");
+  const { mergeGames } = await import("./match.js");
+  const game = db.prepare("SELECT id FROM game").get();
+  assert.equal(mergeGames(db, game.id, game.id), false, "a game cannot merge into itself");
+  assert.equal(mergeGames(db, game.id, 99999), false, "nor into one that does not exist");
+  assert.equal(db.prepare("SELECT count(*) c FROM entitlement WHERE game_id IS NOT NULL").get().c, 1);
+});

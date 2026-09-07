@@ -97,17 +97,47 @@ export async function identify(db, store, uids) {
 // Entitlement is left to title clustering instead of guessed at.
 export async function identifyByName(db, titles, normalise) {
   const wanted = new Map(titles.map((t) => [normalise(t), t]));
+  const found = await lookupNames(db, [...wanted.values()], wanted, normalise, "games", "id,name", (r) => r);
+
+  // Stores name games differently from IGDB: Epic sells "Fallout 2: A Post
+  // Nuclear Role Playing Game", which IGDB records as an alternative name for
+  // "Fallout 2". Without this, that copy never joins the Game its GOG and
+  // Steam copies already share.
+  const missing = [...wanted.entries()].filter(([key]) => !found.has(key));
+  if (missing.length > 0) {
+    const aliases = await lookupNames(
+      db,
+      missing.map(([, title]) => title),
+      new Map(missing),
+      normalise,
+      "alternative_names",
+      "name,game.id,game.name",
+      (r) => (r.game?.id ? { id: r.game.id, name: r.game.name, matched: r.name } : null),
+    );
+    for (const [key, hit] of aliases) found.set(key, hit);
+  }
+
+  return found;
+}
+
+// Exact-name lookup against one IGDB endpoint. An ambiguous name — two games
+// answering to it — is dropped rather than guessed at.
+async function lookupNames(db, titles, wanted, normalise, endpoint, fields, pick) {
   const found = new Map();
   const counts = new Map();
 
-  for (const batch of chunk([...wanted.values()], 100)) {
+  for (const batch of chunk(titles, 100)) {
     const list = batch.map((t) => `"${t.replace(/["\\]/g, "")}"`).join(",");
-    const rows = await query(db, "games", `fields id,name; where name = (${list}); limit 500;`);
-    for (const r of rows) {
-      const key = normalise(r.name);
+    const rows = await query(db, endpoint, `fields ${fields}; where name = (${list}); limit 500;`);
+    for (const row of rows) {
+      const hit = pick(row);
+      if (!hit) continue;
+      // Match on the name we searched for, which for an alias is not the
+      // game's own name.
+      const key = normalise(hit.matched ?? hit.name);
       if (!wanted.has(key)) continue;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-      found.set(key, { igdb_id: r.id, title: r.name });
+      if (found.get(key)?.igdb_id !== hit.id) counts.set(key, (counts.get(key) ?? 0) + 1);
+      found.set(key, { igdb_id: hit.id, title: hit.name });
     }
     await pause();
   }

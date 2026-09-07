@@ -1,16 +1,16 @@
 import { createServer } from "node:http";
-import { open, listGames, stores, saveCredential, unmatched, gameTitles } from "./db.js";
+import { open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle } from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
 import { syncGfn, applyGfn } from "./gfn.js";
 import * as xbox from "./xbox.js";
-import { matchEntitlements } from "./match.js";
+import { matchEntitlements, mergeGames } from "./match.js";
 import { identify, identifyByName } from "./igdb.js";
 import * as gog from "./gog.js";
 import * as epic from "./epic.js";
 
 const STORE_OAUTH = { gog, epic };
-import { layout, listPage, connectPage, unmatchedPage, xboxPage } from "./views.js";
+import { layout, listPage, connectPage, unmatchedPage, xboxPage, mergePage } from "./views.js";
 
 const db = open();
 
@@ -34,6 +34,19 @@ const routes = {
   },
 
   "GET /connect": (_req, res) => html(res, page("Connect", connectPage(stores(db)))),
+
+  "GET /merge": (req, res) => {
+    const from = gameById(db, new URL(req.url, "http://x").searchParams.get("from"));
+    if (!from) return seeOther(res, "/");
+    html(res, page("Merge", mergePage(from, gameTitles(db))));
+  },
+
+  "POST /merge": async (req, res) => {
+    const { from, into } = await body(req);
+    const target = gameByTitle(db, (into ?? "").trim());
+    if (target) mergeGames(db, from, target.id);
+    seeOther(res, target ? "/" : `/merge?from=${encodeURIComponent(from)}`);
+  },
 
   "GET /xbox": (_req, res) => html(res, page("Xbox", xboxPage(xbox.list(db)))),
 

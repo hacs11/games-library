@@ -142,6 +142,11 @@ export function unmatched(db, afterId = 0) {
     .all(afterId);
 }
 
+export const gameById = (db, id) => db.prepare("SELECT id, title FROM game WHERE id = ?").get(Number(id));
+
+export const gameByTitle = (db, title) =>
+  db.prepare("SELECT id, title FROM game WHERE title = ? ORDER BY id LIMIT 1").get(title);
+
 export function gameTitles(db) {
   return db.prepare("SELECT title FROM game ORDER BY title COLLATE NOCASE").all().map((r) => r.title);
 }

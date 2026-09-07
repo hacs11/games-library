@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { open, saveCredential } from "./db.js";
-import { identify } from "./igdb.js";
+import { identify, identifyByName } from "./igdb.js";
 
 // external_game_sources returns display names ("Epic Games Store"), not the
 // snake_case spellings of IGDB's deprecated `category` enum.
@@ -58,6 +58,67 @@ test("an unknown source name fails loudly instead of matching nothing", async ()
   const restore = stubFetch(async () => Response.json([{ id: 99, name: "Something Else" }]));
   try {
     await assert.rejects(() => identify(db, "steam", ["1"]), /no external game source named "Steam".*Something Else/s);
+  } finally {
+    restore();
+  }
+});
+
+const norm = (t) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+test("a title IGDB knows only as an alternative name still identifies", async () => {
+  const db = connected();
+  const asked = [];
+  const restore = stubFetch(async (url, opts) => {
+    const endpoint = String(url).split("/").pop();
+    asked.push(endpoint);
+    if (endpoint === "games") return Response.json([]); // no canonical hit
+    return Response.json([
+      { name: "Fallout 2: A Post Nuclear Role Playing Game", game: { id: 14, name: "Fallout 2" } },
+    ]);
+  });
+  try {
+    const found = await identifyByName(db, ["Fallout 2: A Post Nuclear Role Playing Game"], norm);
+    assert.deepEqual(found.get("fallout 2 a post nuclear role playing game"), {
+      igdb_id: 14,
+      title: "Fallout 2",
+    });
+  } finally {
+    restore();
+  }
+  assert.deepEqual(asked, ["games", "alternative_names"], "aliases are a fallback, not the first resort");
+});
+
+test("the canonical name wins and no alias lookup is made", async () => {
+  const db = connected();
+  const asked = [];
+  const restore = stubFetch(async (url) => {
+    const endpoint = String(url).split("/").pop();
+    asked.push(endpoint);
+    return Response.json(endpoint === "games" ? [{ id: 7, name: "Hades" }] : []);
+  });
+  try {
+    const found = await identifyByName(db, ["Hades"], norm);
+    assert.equal(found.get("hades").igdb_id, 7);
+  } finally {
+    restore();
+  }
+  assert.deepEqual(asked, ["games"], "no alias query when every title already matched");
+});
+
+test("an alias claimed by two different games is rejected", async () => {
+  const db = connected();
+  const restore = stubFetch(async (url) =>
+    Response.json(
+      String(url).endsWith("games")
+        ? []
+        : [
+            { name: "Make Way", game: { id: 1, name: "Make Way" } },
+            { name: "Make Way", game: { id: 2, name: "Make Way (2023)" } },
+          ],
+    ),
+  );
+  try {
+    assert.equal((await identifyByName(db, ["Make Way"], norm)).size, 0);
   } finally {
     restore();
   }

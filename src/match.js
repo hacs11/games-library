@@ -89,3 +89,19 @@ export async function matchEntitlements(db, store, identify, identifyByName = nu
 
   return { igdb, named, fallback };
 }
+
+// Merge one Game into another: an explicit decision, so the moved Entitlements
+// are locked and no later Sync can split them apart again.
+export function mergeGames(db, fromId, intoId) {
+  if (!fromId || !intoId || Number(fromId) === Number(intoId)) return false;
+  const into = db.prepare("SELECT id FROM game WHERE id = ?").get(Number(intoId));
+  if (!into) return false;
+
+  // Both sides are locked, not just the ones that moved: leaving the target
+  // unlocked lets a later match reassign it and split the pair from the other
+  // end, stranding the Entitlements that were moved onto it.
+  db.prepare("UPDATE entitlement SET game_id = ?, locked = 1, confidence = 'manual' WHERE game_id IN (?, ?)")
+    .run(Number(intoId), Number(fromId), Number(intoId));
+  db.exec("DELETE FROM game WHERE id NOT IN (SELECT game_id FROM entitlement WHERE game_id IS NOT NULL)");
+  return true;
+}

@@ -32,6 +32,8 @@ export const layout = (title, body, pending = 0) => `<!doctype html>
   .store.gfn svg { box-shadow: 0 0 0 2px #76b900; }
   .store .bolt { font-size: .85rem; margin-left: -.3rem; align-self: flex-end; }
   td { vertical-align: middle; }
+  .merge { font-size: .75rem; opacity: 0; }
+  tr:hover .merge { opacity: .7; }
   .filters { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
   .filters input[type=search], .filters select { width: auto; font: inherit; padding: .3rem; }
 </style>
@@ -87,12 +89,13 @@ ${
     ? `<p class="empty">Nothing here. Connect a store and sync, or widen the filters.</p>`
     : `<p class="status">${games.length} game${games.length === 1 ? "" : "s"}.</p>
 <table>
-  <tr><th>Game</th><th>Stores</th></tr>
+  <tr><th>Game</th><th>Stores</th><th></th></tr>
   ${games
     .map(
       (g) => `<tr>
     <td>${esc(g.title)}</td>
     <td>${g.stores.map(badge).join("")}</td>
+    <td><a class="merge" href="/merge?from=${g.id}" title="Merge this into another game">merge</a></td>
   </tr>`,
     )
     .join("\n  ")}
@@ -254,3 +257,16 @@ ${
     .join("\n  ")}
 </table>`
 }`;
+
+// The other half of the review tray: the tray catches merges that happened,
+// this catches merges that should have.
+export const mergePage = (from, titles) => `
+<p class="review">${esc(from.title)}<small>merge this game into another</small></p>
+<form method="post" action="/merge">
+  <input type="hidden" name="from" value="${from.id}">
+  <label>Into <input name="into" list="games" autofocus required placeholder="Start typing a game title"></label>
+  <p class="hint">Its stores move onto the game you pick, and this row disappears. The decision is locked,
+    so a later sync will not split them again. Pick an existing title — anything else is ignored.</p>
+  <div class="actions"><button>Merge</button><a href="/">Cancel</a></div>
+</form>
+<datalist id="games">${titles.map((t) => `<option value="${esc(t)}">`).join("")}</datalist>`;
