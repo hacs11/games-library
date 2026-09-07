@@ -2,7 +2,10 @@ import { createServer } from "node:http";
 import { open, listGames, stores, saveCredential, unmatched, gameTitles } from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
-import { extractCode, exchangeCode } from "./gog.js";
+import * as gog from "./gog.js";
+import * as epic from "./epic.js";
+
+const STORE_OAUTH = { gog, epic };
 import { layout, listPage, connectPage, unmatchedPage } from "./views.js";
 
 const db = open();
@@ -49,17 +52,25 @@ const routes = {
     seeOther(res, "/connect");
   },
 
-  "POST /connect/gog": async (req, res) => {
-    const code = extractCode((await body(req)).pasted ?? "");
-    if (code) {
-      await exchangeCode(code)
-        .then((tokens) => saveCredential(db, "gog", tokens))
-        .catch((err) =>
-          db.prepare("UPDATE store_credential SET status='needs_reauth', last_error=? WHERE store='gog'").run(err.message),
-        );
-    }
-    seeOther(res, "/connect");
-  },
+  ...Object.fromEntries(
+    Object.entries(STORE_OAUTH).map(([store, api]) => [
+      `POST /connect/${store}`,
+      async (req, res) => {
+        const code = api.extractCode((await body(req)).pasted ?? "");
+        if (code) {
+          await api
+            .exchangeCode(code)
+            .then((tokens) => saveCredential(db, store, tokens))
+            .catch((err) =>
+              db
+                .prepare("UPDATE store_credential SET status='needs_reauth', last_error=? WHERE store=?")
+                .run(err.message, store),
+            );
+        }
+        seeOther(res, "/connect");
+      },
+    ]),
+  ),
 };
 
 // Every Store syncs through the same route; a failure is recorded on that

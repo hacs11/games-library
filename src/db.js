@@ -61,6 +61,7 @@ export function open(path = "data/library.db") {
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
   addColumn(db, "entitlement", "confidence TEXT");
+  addColumn(db, "entitlement", "alt_id TEXT");
   return db;
 }
 

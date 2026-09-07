@@ -3,8 +3,9 @@ import { matchEntitlements } from "./match.js";
 import { identify } from "./igdb.js";
 import { fetchOwnedGames as steam } from "./steam.js";
 import { fetchOwnedGames as gog } from "./gog.js";
+import { fetchOwnedGames as epic } from "./epic.js";
 
-const FETCHERS = { steam, gog };
+const FETCHERS = { steam, gog, epic };
 
 // Each Store syncs alone: a failure marks that Store and leaves every other
 // Store's Entitlements untouched. Entitlements that stop appearing keep their
@@ -29,10 +30,11 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
 
   const now = new Date().toISOString();
   const upsert = db.prepare(
-    `INSERT INTO entitlement (store, store_game_id, store_title, game_id, first_seen, last_seen)
-          VALUES (?, ?, ?, ?, ?, ?)
+    `INSERT INTO entitlement (store, store_game_id, store_title, alt_id, game_id, first_seen, last_seen)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (store, store_game_id) DO UPDATE SET
           store_title = excluded.store_title,
+          alt_id      = excluded.alt_id,
           last_seen   = excluded.last_seen,
           game_id     = CASE WHEN entitlement.locked = 1 THEN entitlement.game_id ELSE excluded.game_id END`,
   );
@@ -40,7 +42,7 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
   // game_id is left null: matchEntitlements owns the assignment. Guessing a
   // Game here only to overwrite it a moment later abandons the row it created.
   for (const e of entitlements) {
-    upsert.run(store, e.store_game_id, e.store_title, null, now, now);
+    upsert.run(store, e.store_game_id, e.store_title, e.alt_id ?? null, null, now, now);
   }
 
   await matchEntitlements(db, store, identify);

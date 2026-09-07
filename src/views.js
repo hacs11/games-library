@@ -1,4 +1,5 @@
 import { AUTH_URL as GOG_AUTH_URL } from "./gog.js";
+import { AUTH_URL as EPIC_AUTH_URL } from "./epic.js";
 
 const esc = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -63,7 +64,8 @@ export const connectPage = (rows) => {
   </fieldset>
 </form>
 ${steam?.data ? `<form method="post" action="/sync/steam"><button>Sync Steam</button></form>` : ""}
-${gogFieldset(rows)}
+${oauthFieldset(rows, "gog")}
+${oauthFieldset(rows, "epic")}
 ${igdbFieldset(rows)}
 `;
 };
@@ -117,21 +119,36 @@ export const unmatchedPage = (items, titles) => {
 <datalist id="games">${titles.map((t) => `<option value="${esc(t)}">`).join("")}</datalist>`;
 };
 
-export const gogFieldset = (rows) => {
-  const gog = rows.find((r) => r.store === "gog");
-  const connected = gog?.data && gog.status !== "needs_reauth";
+const OAUTH_STORES = {
+  gog: {
+    label: "GOG",
+    url: GOG_AUTH_URL,
+    hint: "After signing in you land on a blank page — copy its whole address from the URL bar and paste it below.",
+    placeholder: "https://embed.gog.com/on_login_success?...code=...",
+  },
+  epic: {
+    label: "Epic",
+    url: EPIC_AUTH_URL,
+    hint: "After signing in you land on a page of JSON — copy all of it and paste it below. Epic's login expires every few weeks, so expect to redo this.",
+    placeholder: '{"redirectUrl":"...","authorizationCode":"..."}',
+  },
+};
+
+export const oauthFieldset = (rows, store) => {
+  const { label, url, hint, placeholder } = OAUTH_STORES[store];
+  const row = rows.find((r) => r.store === store);
+  const connected = row?.data && row.status !== "needs_reauth";
   return `
-<form method="post" action="/connect/gog">
+<form method="post" action="/connect/${store}">
   <fieldset>
-    <legend>GOG</legend>
+    <legend>${label}</legend>
     <p class="hint">
-      <a href="${GOG_AUTH_URL}" target="_blank" rel="noopener">Open the GOG login</a> in a new tab.
-      After signing in you land on a blank page — copy its whole address from the URL bar and paste it below.
+      <a href="${url}" target="_blank" rel="noopener">Open the ${label} login</a> in a new tab. ${hint}
     </p>
-    <label>Login URL (or just the code) <input name="pasted" placeholder="https://embed.gog.com/on_login_success?...code=..." ${connected ? "" : "required"}></label>
+    <label>Paste it here <input name="pasted" placeholder="${esc(placeholder)}" ${connected ? "" : "required"}></label>
     <button>${connected ? "Reconnect" : "Connect"}</button>
-    ${status(gog)}
+    ${status(row)}
   </fieldset>
 </form>
-${connected ? `<form method="post" action="/sync/gog"><button>Sync GOG</button></form>` : ""}`;
+${connected ? `<form method="post" action="/sync/${store}"><button>Sync ${label}</button></form>` : ""}`;
 };

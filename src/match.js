@@ -24,13 +24,17 @@ export function resolveGame(db, title) {
 // resolved by IGDB is flagged for review rather than merged silently.
 export async function matchEntitlements(db, store, identify) {
   const rows = db
-    .prepare("SELECT id, store_game_id, store_title FROM entitlement WHERE store = ? AND locked = 0")
+    .prepare("SELECT id, store_game_id, alt_id, store_title FROM entitlement WHERE store = ? AND locked = 0")
     .all(store);
   if (rows.length === 0) return { igdb: 0, fallback: 0 };
 
   let found = new Map();
   try {
-    found = await identify(db, store, rows.map((r) => r.store_game_id));
+    // Epic Entitlements carry two candidate ids and IGDB indexes only one of
+    // them; ask about both rather than guessing which.
+    found = await identify(db, store, [
+      ...new Set(rows.flatMap((r) => [r.store_game_id, r.alt_id]).filter(Boolean)),
+    ]);
   } catch (err) {
     // IGDB being down must not stop a Sync — everything falls back to titles.
     // The failure is recorded against IGDB so the Connect page shows it,
@@ -53,7 +57,7 @@ export async function matchEntitlements(db, store, identify) {
   let igdb = 0;
   let fallback = 0;
   for (const row of rows) {
-    const hit = found.get(String(row.store_game_id));
+    const hit = found.get(String(row.store_game_id)) ?? (row.alt_id && found.get(String(row.alt_id)));
     if (hit) {
       assign.run(byIgdb.get(hit.igdb_id, hit.title, normaliseTitle(hit.title)).id, "igdb", row.id);
       igdb++;
