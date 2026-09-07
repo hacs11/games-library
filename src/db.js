@@ -67,6 +67,12 @@ const MIGRATIONS = [
   // Records which catalogue entry an Entitlement matched, so the discover page
   // can exclude what you own exactly rather than by guessing at titles again.
   (db) => addColumn(db, "entitlement", "gfn_title TEXT"),
+  (db) => {
+    addColumn(db, "game", "cover_url TEXT");
+    addColumn(db, "game", "genres TEXT");
+    addColumn(db, "gfn_entry", "image_url TEXT");
+    addColumn(db, "gfn_entry", "genres TEXT");
+  },
 ];
 
 export function open(path = "data/library.db") {
@@ -82,11 +88,13 @@ export function open(path = "data/library.db") {
 
 // One row per Game, with the Stores it was bought in. Entitlements with no
 // Game yet (unmatched) are deliberately absent — they live in the tray.
-export function listGames(db, { q = "", store = "", gfn = false, all = false } = {}) {
+export function listGames(db, { q = "", store = "", gfn = false, all = false, genre = "" } = {}) {
   return db
     .prepare(
       `SELECT g.id,
               g.title,
+              g.cover_url,
+              g.genres,
               group_concat(e.store || ':' || coalesce(e.gfn_status, ''), ',') AS stores,
               max(e.gfn_status = 'AVAILABLE') AS streamable
          FROM game g
@@ -94,11 +102,12 @@ export function listGames(db, { q = "", store = "", gfn = false, all = false } =
         WHERE (:all = 1 OR g.is_game = 1)
           AND (:q = '' OR g.title LIKE '%' || :q || '%')
           AND (:store = '' OR EXISTS (SELECT 1 FROM entitlement s WHERE s.game_id = g.id AND s.store = :store))
+          AND (:genre = '' OR g.genres LIKE '%' || :genre || '%')
         GROUP BY g.id
        HAVING (:gfn = 0 OR streamable = 1)
         ORDER BY g.title COLLATE NOCASE`,
     )
-    .all({ q, store, gfn: gfn ? 1 : 0, all: all ? 1 : 0 })
+    .all({ q, store, gfn: gfn ? 1 : 0, all: all ? 1 : 0, genre })
     .map((r) => ({
       ...r,
       streamable: !!r.streamable,
@@ -152,6 +161,8 @@ export function discoverGames(db, { q = "", store = "" } = {}, limit = 200) {
   return db
     .prepare(
       `SELECT min(title) AS title,
+              max(image_url) AS cover_url,
+              max(genres) AS genres,
               group_concat(DISTINCT store) AS stores
          FROM gfn_entry g
         WHERE g.steam_appid IS NULL
@@ -187,6 +198,15 @@ export function staleSources(db, now = Date.now()) {
       return { ...row, days: Math.floor(days) };
     })
     .filter((row) => row.status === "needs_reauth" || row.days >= (STALE_DAYS[row.store] ?? DEFAULT_STALE_DAYS));
+}
+
+// Genres arrive as comma-separated lists; the filter needs them split out.
+export function genreList(db) {
+  const seen = new Set();
+  for (const r of db.prepare("SELECT genres FROM game WHERE genres IS NOT NULL").all()) {
+    for (const g of r.genres.split(",")) seen.add(g.trim());
+  }
+  return [...seen].filter(Boolean).sort();
 }
 
 export const hiddenCount = (db) =>

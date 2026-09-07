@@ -157,3 +157,33 @@ export async function classifyGames(db, fetchTypes) {
 
   return { hidden };
 }
+
+// Cover art and genres: IGDB where the Game is identified, the GeForce NOW
+// catalogue as a fallback for the rest — it carries key art and genres for
+// every game in it, which covers a good share of what IGDB missed.
+export async function enrichGames(db, fetchArtwork) {
+  const identified = db.prepare("SELECT id, igdb_id FROM game WHERE igdb_id IS NOT NULL").all();
+
+  if (identified.length > 0) {
+    try {
+      const art = await fetchArtwork(db, identified.map((g) => g.igdb_id));
+      const set = db.prepare("UPDATE game SET cover_url = ?, genres = ? WHERE id = ?");
+      for (const g of identified) {
+        const hit = art.get(g.igdb_id);
+        if (hit) set.run(hit.cover_url, hit.genres, g.id);
+      }
+    } catch (err) {
+      // Art is decoration; a failure here must not fail a Sync.
+      console.error(`IGDB artwork lookup failed: ${err.message}`);
+    }
+  }
+
+  db.exec(`
+    UPDATE game SET
+      cover_url = coalesce(cover_url, (SELECT image_url FROM gfn_entry WHERE norm_title = game.norm_title AND image_url IS NOT NULL LIMIT 1)),
+      genres    = coalesce(genres,    (SELECT genres    FROM gfn_entry WHERE norm_title = game.norm_title AND genres    IS NOT NULL LIMIT 1))
+    WHERE cover_url IS NULL OR genres IS NULL
+  `);
+
+  return db.prepare("SELECT count(*) c FROM game WHERE cover_url IS NOT NULL").get().c;
+}

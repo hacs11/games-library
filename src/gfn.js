@@ -37,8 +37,12 @@ export async function syncGfn(db) {
   // dies halfway must not leave a truncated list behind.
   db.exec("DELETE FROM gfn_entry");
   const insert = db.prepare(
-    "INSERT INTO gfn_entry (gfn_id, title, norm_title, store, steam_appid, status) VALUES (?, ?, ?, ?, ?, ?)",
+    `INSERT INTO gfn_entry (gfn_id, title, norm_title, store, steam_appid, status, image_url, genres)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  // Pentanet's genres are SCREAMING_SNAKE; store them the way they will be read.
+  const readable = (g) =>
+    (g ?? []).map((x) => x.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())).join(", ");
   let rows = 0;
   for (const g of games) {
     // One row per variant: support is per store, so a game streamable from GOG
@@ -46,7 +50,10 @@ export async function syncGfn(db) {
     // Some catalogue titles arrive with leading or trailing whitespace.
     const title = g.title.trim();
     for (const v of g.variants ?? []) {
-      insert.run(v.id ?? null, title, normaliseTitle(title), v.appStore ?? null, null, "AVAILABLE");
+      insert.run(
+        v.id ?? null, title, normaliseTitle(title), v.appStore ?? null, null, "AVAILABLE",
+        g.images?.KEY_ART ?? null, readable(g.genres) || null,
+      );
       rows++;
     }
   }
@@ -57,7 +64,7 @@ export async function syncGfn(db) {
     for (const e of await res.json()) {
       const appid = e.steamUrl?.match(/\/app\/(\d+)/)?.[1];
       if (!appid || e.store !== "Steam") continue;
-      insert.run(null, e.title.trim(), normaliseTitle(e.title), "STEAM", appid, e.status ?? "AVAILABLE");
+      insert.run(null, e.title.trim(), normaliseTitle(e.title), "STEAM", appid, e.status ?? "AVAILABLE", null, null);
       appids++;
     }
   } catch (err) {

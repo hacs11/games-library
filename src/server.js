@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import {
   open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
-  discoverGames, discoverCount, hiddenCount, staleSources,
+  discoverGames, discoverCount, hiddenCount, staleSources, genreList,
 } from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
@@ -37,8 +37,9 @@ const routes = {
       store: p.get("store") ?? "",
       gfn: p.get("gfn") === "1",
       all: p.get("all") === "1",
+      genre: p.get("genre") ?? "",
     };
-    html(res, page("Library", listPage(listGames(db, filters), filters, hiddenCount(db), staleSources(db))));
+    html(res, page("Library", listPage(listGames(db, filters), filters, hiddenCount(db), staleSources(db), genreList(db))));
   },
 
   "GET /connect": (_req, res) => html(res, page("Connect", connectPage(stores(db)))),

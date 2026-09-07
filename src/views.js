@@ -32,6 +32,9 @@ export const layout = (title, body, pending = 0) => `<!doctype html>
   .store.gfn svg { box-shadow: 0 0 0 2px #76b900; }
   .store .bolt { font-size: .85rem; margin-left: -.3rem; align-self: flex-end; }
   td { vertical-align: middle; }
+  .cover { width: 46px; height: 62px; object-fit: cover; border-radius: .25rem; display: block; background: color-mix(in srgb, currentColor 12%, transparent); }
+  .cover-cell { width: 46px; padding-right: 0; }
+  .genres { font-size: .8rem; opacity: .7; }
   .store.other { border: 1px solid; border-radius: .5rem; padding: 0 .4rem; font-size: .75rem; }
   .stale { border: 1px solid #b8860b; border-radius: .5rem; padding: .6rem .8rem; margin-bottom: 1rem; font-size: .9rem; }
   .stale form { display: inline; }
@@ -75,7 +78,7 @@ const badge = ({ store, status }) => {
   }${status === "AVAILABLE" ? `<span class="bolt" aria-hidden="true">&#9889;</span>` : ""}</span>`;
 };
 
-export const listPage = (games, filters = {}, hidden = 0, stale = []) => `
+export const listPage = (games, filters = {}, hidden = 0, stale = [], genres = []) => `
 ${staleBanner(stale)}
 <form class="filters" method="get" action="/">
   <input type="search" name="q" placeholder="Search titles" value="${esc(filters.q ?? "")}">
@@ -85,21 +88,27 @@ ${staleBanner(stale)}
       .map(([v, l]) => `<option value="${v}"${filters.store === v ? " selected" : ""}>${l}</option>`)
       .join("")}
   </select>
+  <select name="genre">
+    <option value="">All genres</option>
+    ${(genres ?? []).map((g) => `<option value="${esc(g)}"${filters.genre === g ? " selected" : ""}>${esc(g)}</option>`).join("")}
+  </select>
   <label style="display:inline"><input type="checkbox" name="gfn" value="1" style="width:auto"${filters.gfn ? " checked" : ""}> Confirmed on GeForce NOW</label>
   ${hidden > 0 || filters.all ? `<label style="display:inline"><input type="checkbox" name="all" value="1" style="width:auto"${filters.all ? " checked" : ""}> Include ${hidden} soundtracks, demos and tools</label>` : ""}
   <button>Filter</button>
-  ${filters.q || filters.store || filters.gfn || filters.all ? `<a href="/">Clear</a>` : ""}
+  ${filters.q || filters.store || filters.gfn || filters.all || filters.genre ? `<a href="/">Clear</a>` : ""}
 </form>
 ${
   games.length === 0
     ? `<p class="empty">Nothing here. Connect a store and sync, or widen the filters.</p>`
     : `<p class="status">${games.length} game${games.length === 1 ? "" : "s"}.</p>
 <table>
-  <tr><th>Game</th><th>Stores</th><th></th></tr>
+  <tr><th colspan="2">Game</th><th>Genres</th><th>Stores</th><th></th></tr>
   ${games
     .map(
       (g) => `<tr>
+    <td class="cover-cell">${cover(g)}</td>
     <td>${esc(g.title)}</td>
+    <td class="genres">${esc(g.genres ?? "")}</td>
     <td>${g.stores.map(badge).join("")}</td>
     <td><a class="merge" href="/merge?from=${g.id}" title="Merge this into another game">merge</a></td>
   </tr>`,
@@ -318,11 +327,13 @@ ${
         games.length < total ? `, showing the first ${games.length}` : ""
       }.</p>
 <table>
-  <tr><th>Game</th><th>Buy on</th></tr>
+  <tr><th colspan="2">Game</th><th>Genres</th><th>Buy on</th></tr>
   ${games
     .map(
       (g) => `<tr>
+    <td class="cover-cell">${cover(g)}</td>
     <td>${esc(g.title)}</td>
+    <td class="genres">${esc(g.genres ?? "")}</td>
     <td>${g.stores.map(catalogueBadge).join("")}</td>
   </tr>`,
     )
@@ -351,3 +362,12 @@ export const staleBanner = (stale) => {
     .join(" ")}
 </div>`;
 };
+
+// Covers are hotlinked from IGDB's and NVIDIA's CDNs rather than downloaded:
+// this is a local single-user app, and caching a few hundred jpegs would buy
+// nothing but a cache to invalidate. Games without art get an empty box, so
+// rows keep a consistent height.
+const cover = (g) =>
+  g.cover_url
+    ? `<img class="cover" src="${esc(g.cover_url)}" alt="" loading="lazy" width="46" height="62">`
+    : `<span class="cover" aria-hidden="true"></span>`;
