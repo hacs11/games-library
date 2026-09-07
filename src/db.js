@@ -13,9 +13,11 @@ CREATE TABLE IF NOT EXISTS game (
   id         INTEGER PRIMARY KEY,
   igdb_id    INTEGER UNIQUE,
   title      TEXT NOT NULL,
-  norm_title TEXT NOT NULL UNIQUE,
+  norm_title TEXT NOT NULL,
   is_game    INTEGER NOT NULL DEFAULT 1
 );
+
+CREATE INDEX IF NOT EXISTS game_norm_title ON game (norm_title);
 
 CREATE TABLE IF NOT EXISTS entitlement (
   id            INTEGER PRIMARY KEY,
@@ -41,6 +43,16 @@ CREATE TABLE IF NOT EXISTS gfn_entry (
 );
 `;
 
+// Columns added after the fact, so an existing library.db survives a schema
+// change without being thrown away.
+function addColumn(db, table, definition) {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`);
+  } catch (err) {
+    if (!/duplicate column/i.test(err.message)) throw err;
+  }
+}
+
 // ponytail: no migrations — the schema only grows by editing SCHEMA and deleting
 // data/library.db. Fine while every row is re-syncable; needs a real migration
 // once Xbox Entitlements (typed by hand, slice 7) live in here.
@@ -48,6 +60,7 @@ export function open(path = "data/library.db") {
   const db = new DatabaseSync(path);
   db.exec("PRAGMA foreign_keys = ON");
   db.exec(SCHEMA);
+  addColumn(db, "entitlement", "confidence TEXT");
   return db;
 }
 
@@ -84,4 +97,26 @@ export function saveCredential(db, store, data) {
 
 export function stores(db) {
   return db.prepare("SELECT * FROM store_credential ORDER BY store").all();
+}
+
+// Only title-clustered Entitlements that actually got *merged* with another
+// need review — a cluster of one merged nothing, so there is no wrong decision
+// hiding in it and asking about it is pure busywork.
+export function unmatched(db, afterId = 0) {
+  return db
+    .prepare(
+      `SELECT e.id, e.store, e.store_title, g.title AS guess
+         FROM entitlement e
+         JOIN game g ON g.id = e.game_id
+        WHERE e.locked = 0
+          AND (e.confidence IS NULL OR e.confidence NOT IN ('igdb', 'manual'))
+          AND e.id > ?
+          AND (SELECT count(*) FROM entitlement o WHERE o.game_id = e.game_id) > 1
+        ORDER BY e.id`,
+    )
+    .all(afterId);
+}
+
+export function gameTitles(db) {
+  return db.prepare("SELECT title FROM game ORDER BY title COLLATE NOCASE").all().map((r) => r.title);
 }

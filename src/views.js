@@ -1,7 +1,7 @@
 const esc = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
-export const layout = (title, body) => `<!doctype html>
+export const layout = (title, body, pending = 0) => `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)} — Games Library</title>
@@ -18,10 +18,13 @@ export const layout = (title, body) => `<!doctype html>
   .status { font-size: .85rem; opacity: .75; }
   .error { color: #c00; font-size: .85rem; }
   .hint { font-size: .85rem; opacity: .75; margin: .25rem 0 .75rem; }
+  .review { font-size: 1.3rem; margin: 1rem 0 .25rem; }
+  .review small { display: block; font-size: .8rem; opacity: .7; font-weight: normal; }
+  .actions { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; }
   .store { font-size: .8rem; border: 1px solid; border-radius: .5rem; padding: 0 .4rem; margin-right: .25rem; }
 </style>
 <h1>Games Library</h1>
-<nav><a href="/">Library</a><a href="/connect">Connect</a></nav>
+<nav><a href="/">Library</a><a href="/unmatched">Unmatched${pending ? ` (${pending})` : ""}</a><a href="/connect">Connect</a></nav>
 ${body}
 `;
 
@@ -58,6 +61,7 @@ export const connectPage = (rows) => {
   </fieldset>
 </form>
 ${steam?.data ? `<form method="post" action="/sync/steam"><button>Sync Steam</button></form>` : ""}
+${igdbFieldset(rows)}
 `;
 };
 
@@ -67,3 +71,45 @@ const status = (row) =>
     : row.last_error
       ? `<p class="error">${esc(row.last_error)}</p>`
       : `<p class="status">${row.last_synced_at ? `Last synced ${esc(row.last_synced_at)}` : "Connected, never synced."}</p>`;
+
+export const igdbFieldset = (rows) => {
+  const igdb = rows.find((r) => r.store === "igdb");
+  const d = igdb?.data ? JSON.parse(igdb.data) : {};
+  return `
+<form method="post" action="/connect/igdb">
+  <fieldset>
+    <legend>IGDB</legend>
+    <p class="hint">Identifies the same Game across Stores. Register an application at
+      <a href="https://dev.twitch.tv/console/apps">dev.twitch.tv/console/apps</a> —
+      IGDB authenticates through Twitch. Any OAuth redirect URL will do; it is never used.</p>
+    <label>Client ID <input name="client_id" value="${esc(d.client_id ?? "")}" required></label>
+    <label>Client secret <input name="client_secret" type="password" value="${esc(d.client_secret ?? "")}" required></label>
+    <button>Save</button>
+    ${igdb ? `<p class="status">Connected.</p>` : `<p class="status">Not connected — Games will be matched by title only.</p>`}
+  </fieldset>
+</form>`;
+};
+
+// One Entitlement at a time: the input is autofocused and Enter confirms, so a
+// long tray is worked through from the keyboard alone.
+export const unmatchedPage = (items, titles) => {
+  if (items.length === 0)
+    return `<p class="empty">Nothing to review — every Entitlement is either identified by IGDB or confirmed by you.</p>`;
+
+  const [item, ...rest] = items;
+  return `
+<p class="status">${items.length} left to review.</p>
+<form method="post" action="/unmatched">
+  <input type="hidden" name="id" value="${item.id}">
+  <p class="review">${esc(item.store_title)}<small>from ${esc(item.store)}</small></p>
+  <label>Belongs to Game
+    <input name="title" list="games" value="${esc(item.guess ?? item.store_title)}" autofocus required>
+  </label>
+  <p class="hint">Type an existing Game's title to merge this into it, or edit the title to split it out.</p>
+  <div class="actions">
+    <button>Confirm</button>
+    ${rest.length ? `<a href="/unmatched?after=${item.id}">Skip</a>` : ""}
+  </div>
+</form>
+<datalist id="games">${titles.map((t) => `<option value="${esc(t)}">`).join("")}</datalist>`;
+};

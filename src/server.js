@@ -1,7 +1,8 @@
 import { createServer } from "node:http";
-import { open, listGames, stores, saveCredential } from "./db.js";
+import { open, listGames, stores, saveCredential, unmatched, gameTitles } from "./db.js";
+import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
-import { layout, listPage, connectPage } from "./views.js";
+import { layout, listPage, connectPage, unmatchedPage } from "./views.js";
 
 const db = open();
 
@@ -15,10 +16,31 @@ async function body(req) {
   return Object.fromEntries(new URLSearchParams(Buffer.concat(chunks).toString()));
 }
 
-const routes = {
-  "GET /": (_req, res) => html(res, layout("Library", listPage(listGames(db)))),
+const page = (title, body) => layout(title, body, unmatched(db).length);
 
-  "GET /connect": (_req, res) => html(res, layout("Connect", connectPage(stores(db)))),
+const routes = {
+  "GET /": (_req, res) => html(res, page("Library", listPage(listGames(db)))),
+
+  "GET /connect": (_req, res) => html(res, page("Connect", connectPage(stores(db)))),
+
+  "GET /unmatched": (req, res) => {
+    const after = Number(new URL(req.url, "http://x").searchParams.get("after") ?? 0);
+    html(res, page("Unmatched", unmatchedPage(unmatched(db, after), gameTitles(db))));
+  },
+
+  // Confirming locks the Entitlement so no later Sync can re-guess it.
+  "POST /unmatched": async (req, res) => {
+    const { id, title } = await body(req);
+    db.prepare("UPDATE entitlement SET game_id = ?, locked = 1, confidence = 'manual' WHERE id = ?")
+      .run(resolveGame(db, title.trim()), Number(id));
+    seeOther(res, "/unmatched");
+  },
+
+  "POST /connect/igdb": async (req, res) => {
+    const { client_id, client_secret } = await body(req);
+    saveCredential(db, "igdb", { client_id: client_id.trim(), client_secret: client_secret.trim() });
+    seeOther(res, "/connect");
+  },
 
   "POST /connect/steam": async (req, res) => {
     const { api_key, steam_id } = await body(req);

@@ -1,5 +1,6 @@
 import { credential } from "./db.js";
-import { resolveGame } from "./match.js";
+import { resolveGame, matchEntitlements } from "./match.js";
+import { identify } from "./igdb.js";
 import { fetchOwnedGames } from "./steam.js";
 
 const FETCHERS = { steam: fetchOwnedGames };
@@ -34,6 +35,8 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
   for (const e of entitlements) {
     upsert.run(store, e.store_game_id, e.store_title, resolveGame(db, e.store_title), now, now);
   }
+
+  await matchEntitlements(db, store, identify);
 
   db.prepare(
     "UPDATE store_credential SET status = 'connected', last_synced_at = ?, last_error = NULL WHERE store = ?",
