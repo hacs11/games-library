@@ -10,10 +10,11 @@ CREATE TABLE IF NOT EXISTS store_credential (
 );
 
 CREATE TABLE IF NOT EXISTS game (
-  id      INTEGER PRIMARY KEY,
-  igdb_id INTEGER UNIQUE,
-  title   TEXT NOT NULL,
-  is_game INTEGER NOT NULL DEFAULT 1
+  id         INTEGER PRIMARY KEY,
+  igdb_id    INTEGER UNIQUE,
+  title      TEXT NOT NULL,
+  norm_title TEXT NOT NULL UNIQUE,
+  is_game    INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS entitlement (
@@ -40,6 +41,9 @@ CREATE TABLE IF NOT EXISTS gfn_entry (
 );
 `;
 
+// ponytail: no migrations — the schema only grows by editing SCHEMA and deleting
+// data/library.db. Fine while every row is re-syncable; needs a real migration
+// once Xbox Entitlements (typed by hand, slice 7) live in here.
 export function open(path = "data/library.db") {
   const db = new DatabaseSync(path);
   db.exec("PRAGMA foreign_keys = ON");
@@ -64,4 +68,20 @@ export function listGames(db) {
     )
     .all()
     .map((r) => ({ ...r, stores: r.stores.split(","), streamable: !!r.streamable }));
+}
+
+export function credential(db, store) {
+  const row = db.prepare("SELECT * FROM store_credential WHERE store = ?").get(store);
+  return row ? { ...row, data: row.data ? JSON.parse(row.data) : null } : null;
+}
+
+export function saveCredential(db, store, data) {
+  db.prepare(
+    `INSERT INTO store_credential (store, data, status) VALUES (?, ?, 'connected')
+       ON CONFLICT (store) DO UPDATE SET data = excluded.data, status = 'connected', last_error = NULL`,
+  ).run(store, JSON.stringify(data));
+}
+
+export function stores(db) {
+  return db.prepare("SELECT * FROM store_credential ORDER BY store").all();
 }

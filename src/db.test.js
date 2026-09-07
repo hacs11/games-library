@@ -6,7 +6,8 @@ test("listGames groups Entitlements into one row per Game", () => {
   const db = open(":memory:");
   const now = "2026-01-01";
   db.exec(`
-    INSERT INTO game (id, title) VALUES (1, 'Cyberpunk 2077'), (2, 'Hades'), (3, 'Some Soundtrack');
+    INSERT INTO game (id, title, norm_title) VALUES
+      (1, 'Cyberpunk 2077', 'cyberpunk 2077'), (2, 'Hades', 'hades'), (3, 'Some Soundtrack', 'some soundtrack');
     UPDATE game SET is_game = 0 WHERE id = 3;
     INSERT INTO entitlement (store, store_game_id, store_title, game_id, first_seen, last_seen, gfn_status) VALUES
       ('gog',   '123', 'Cyberpunk 2077', 1, '${now}', '${now}', 'AVAILABLE'),
