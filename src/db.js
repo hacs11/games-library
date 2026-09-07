@@ -90,11 +90,34 @@ const MIGRATIONS = [
     addColumn(db, "game", "year INTEGER");
     addColumn(db, "entitlement", "playtime_minutes INTEGER");
   },
+  // Catalogue prices. Kept out of gfn_entry, which is replaced wholesale on
+  // every GeForce NOW sync — appid resolution and prices should outlive that.
+  (db) => {
+    db.exec(`CREATE TABLE IF NOT EXISTS steam_app (
+      norm_title TEXT PRIMARY KEY,
+      appid      TEXT NOT NULL
+    )`);
+    db.exec(`CREATE TABLE IF NOT EXISTS steam_price (
+      appid            TEXT PRIMARY KEY,
+      currency         TEXT,
+      final_cents      INTEGER,
+      initial_cents    INTEGER,
+      discount_percent INTEGER,
+      formatted        TEXT,
+      fetched_at       TEXT NOT NULL
+    )`);
+  },
 ];
 
 export function open(path = "data/library.db") {
   const db = new DatabaseSync(path);
   db.exec("PRAGMA foreign_keys = ON");
+  // Long writes (pricing the catalogue, fetching Metacritic) run for minutes
+  // while pages are being served. WAL lets readers work through a write, and
+  // without a busy timeout a second connection fails instantly instead of
+  // waiting its turn.
+  if (path !== ":memory:") db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA busy_timeout = 10000");
 
   const { user_version: from } = db.prepare("PRAGMA user_version").get();
   for (let v = from; v < MIGRATIONS.length; v++) MIGRATIONS[v](db);
@@ -188,14 +211,18 @@ export function unmatched(db, afterId = 0) {
 // GeForce NOW games you do not own, and where you could buy them. The NVIDIA
 // appid rows are excluded: they are a Steam-only supplement to the same
 // catalogue and would double every Steam entry.
-export function discoverGames(db, { q = "", store = "" } = {}, limit = 200) {
+export function discoverGames(db, { q = "", store = "", sale = false, sort = "" } = {}, limit = 200) {
   return db
     .prepare(
       `SELECT min(title) AS title,
               max(image_url) AS cover_url,
               max(genres) AS genres,
-              group_concat(DISTINCT store) AS stores
+              group_concat(DISTINCT store) AS stores,
+              max(p.formatted) AS price,
+              max(p.discount_percent) AS discount
          FROM gfn_entry g
+         LEFT JOIN steam_app a ON a.norm_title = g.norm_title
+         LEFT JOIN steam_price p ON p.appid = a.appid
         WHERE g.steam_appid IS NULL
           AND g.store IS NOT NULL
           AND g.store NOT IN ('NONE', 'UNKNOWN')
@@ -204,16 +231,23 @@ export function discoverGames(db, { q = "", store = "" } = {}, limit = 200) {
           AND (:q = '' OR g.title LIKE '%' || :q || '%')
           AND (:store = '' OR EXISTS (SELECT 1 FROM gfn_entry s WHERE s.norm_title = g.norm_title AND s.store = :store))
         GROUP BY g.norm_title
-        ORDER BY min(title) COLLATE NOCASE
-        LIMIT ${limit}`,
+       HAVING (:sale = 0 OR discount > 0)
+        ORDER BY ${sort === "discount" ? "discount IS NULL, discount DESC," : ""} min(title) COLLATE NOCASE
+        ${limit > 0 ? `LIMIT ${limit}` : ""}`,
     )
-    .all({ q, store })
+    .all({ q, store, sale: sale ? 1 : 0 })
     .map((r) => ({ ...r, stores: r.stores.split(",").sort() }));
 }
 
 export function discoverCount(db, filters = {}) {
-  return discoverGames(db, filters, -1).length;
+  return discoverGames(db, filters, 0).length;
 }
+
+export const priceCounts = (db) => ({
+  apps: db.prepare("SELECT count(*) c FROM steam_app").get().c,
+  priced: db.prepare("SELECT count(*) c FROM steam_price WHERE final_cents IS NOT NULL").get().c,
+  onSale: db.prepare("SELECT count(*) c FROM steam_price WHERE discount_percent > 0").get().c,
+});
 
 // A Store whose data is old enough to be misleading. GeForce NOW moves fastest
 // — NVIDIA adds and drops titles weekly — so it goes stale soonest.

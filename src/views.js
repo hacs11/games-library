@@ -478,7 +478,7 @@ const CATALOGUE_STORES = {
 export const discoverPage = (games, filters = {}, total = 0) => `
 ${title("Discover", {
   count: `${total} titles`,
-  intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence.",
+  intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's, in AUD.",
 })}
 <form class="filters" method="get" action="/discover">
   <span class="search-wrap">
@@ -494,7 +494,13 @@ ${title("Discover", {
       )
       .join("")}
   </select>
+  <select class="input" name="sort" style="min-width:150px">
+    <option value="">A–Z</option>
+    <option value="discount"${filters.sort === "discount" ? " selected" : ""}>Biggest discount</option>
+  </select>
   <button class="btn btn-secondary">Apply</button>
+  <a class="gfn-toggle${filters.sale ? " on" : ""}" href="/discover${qs({ ...filters, sale: !filters.sale })}"
+     style="${filters.sale ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">On sale only</a>
 </form>
 <hr class="rule-fade" style="margin-bottom:22px">
 ${
@@ -511,8 +517,10 @@ ${games
     <div style="min-width:0">
       <div class="card-title" style="font-size:15px">${esc(g.title)}</div>
       <div style="font-size:11px;margin-top:4px;color:color-mix(in srgb, var(--color-text) 45%, transparent)">${esc((g.genres ?? "").split(", ").slice(0, 3).join(", "))}</div>
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
         <span class="tag" style="background:#1d2a14;color:#a3d95a;box-shadow:inset 0 0 0 1px #3f5c22">${icon("lightning", 9)} GFN</span>
+        ${g.discount > 0 ? `<span class="tag tag-accent" title="Steam discount">−${g.discount}%</span>` : ""}
+        ${g.price ? `<span class="tag tag-neutral" style="font-variant-numeric:tabular-nums" title="Steam price, AUD">${esc(g.price)}</span>` : ""}
         ${g.stores.map((s) => `<span class="store-pill">${storeMark(CATALOGUE_STORES[s] ?? "?", 12)}${esc(STORE_NAMES[CATALOGUE_STORES[s]] ?? CATALOGUE_STORES[s] ?? s)}</span>`).join("")}
       </div>
     </div>
@@ -675,6 +683,16 @@ ${connectCard({
   counts: counts.gfn ? `${counts.gfn} catalogue entries` : "",
   action: syncBtn("gfn", "Resync"),
   body: `<p class="intro" style="margin:0">Pentanet's Australian catalogue. No login needed. Support is per store — a game may stream from GOG but not Epic.</p>`,
+})}
+${connectCard({
+  store: "steam",
+  label: "Catalogue prices",
+  row: { status: counts.prices?.priced ? "connected" : undefined },
+  counts: counts.prices?.priced
+    ? `${counts.prices.priced} priced · ${counts.prices.onSale} on sale`
+    : "not fetched yet",
+  action: `<form class="inline" method="post" action="/prices"><button class="btn btn-secondary" style="font-size:12px">Refresh prices</button></form>`,
+  body: `<p class="intro" style="margin:0">Steam prices in AUD for the Discover catalogue, resolved by title against Steam's own app list. Epic, GOG and Xbox publish no reachable price data, so those titles show no price. Takes a couple of minutes.</p>`,
 })}
 ${connectCard({
   store: "igdb",

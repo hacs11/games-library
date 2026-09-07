@@ -3,11 +3,11 @@ import { readFile } from "node:fs/promises";
 import {
   open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
   discoverGames, discoverCount, hiddenCount, staleSources, genreList, ratingCounts,
-  ownedCount, gameDetail, countGames,
+  ownedCount, gameDetail, countGames, priceCounts, credential,
 } from "./db.js";
 import { syncStore } from "./sync.js";
 import { syncGfn, applyGfn } from "./gfn.js";
-import { fetchMetacritic, pendingCount } from "./steam.js";
+import { fetchMetacritic, pendingCount, syncAppIds, fetchPrices } from "./steam.js";
 import { matchEntitlements, mergeGames, rateGames, resolveGame } from "./match.js";
 import { identify, identifyByName, criticScores } from "./igdb.js";
 import * as gog from "./gog.js";
@@ -83,7 +83,11 @@ const routes = {
       res,
       page(
         "Connect",
-        connectPage(stores(db), pendingCount(db), ratingCounts(db), { ...entitlementCounts(), gfn: db.prepare("SELECT count(*) c FROM gfn_entry").get().c }),
+        connectPage(stores(db), pendingCount(db), ratingCounts(db), {
+          ...entitlementCounts(),
+          gfn: db.prepare("SELECT count(*) c FROM gfn_entry").get().c,
+          prices: priceCounts(db),
+        }),
         "/connect",
       ),
       "/connect",
@@ -91,7 +95,12 @@ const routes = {
 
   "GET /discover": (req, res) => {
     const p = new URL(req.url, "http://x").searchParams;
-    const filters = { q: p.get("q") ?? "", store: p.get("store") ?? "" };
+    const filters = {
+      q: p.get("q") ?? "",
+      store: p.get("store") ?? "",
+      sale: p.get("sale") === "1",
+      sort: p.get("sort") ?? "",
+    };
     html(res, page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters)), "/discover"));
   },
 
@@ -151,6 +160,17 @@ const routes = {
 
   // Rate limited to ~200 requests per 5 minutes, so this is its own action
   // rather than part of a Sync, and picks up where it left off.
+  // Resolving 185k Steam apps then pricing ~1,900 of them: minutes, not
+  // seconds, so it is a button rather than part of any Sync.
+  "POST /prices": async (_req, res) => {
+    const cred = credential(db, "steam");
+    if (cred?.data) {
+      await syncAppIds(db, cred.data).catch((err) => console.error(err.message));
+      await fetchPrices(db).catch((err) => console.error(err.message));
+    }
+    seeOther(res, "/connect");
+  },
+
   "POST /ratings": async (_req, res) => {
     await fetchMetacritic(db).catch((err) => console.error(err.message));
     await rateGames(db, criticScores).catch((err) => console.error(err.message));
