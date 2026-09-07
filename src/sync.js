@@ -1,5 +1,5 @@
 import { credential } from "./db.js";
-import { resolveGame, matchEntitlements } from "./match.js";
+import { matchEntitlements } from "./match.js";
 import { identify } from "./igdb.js";
 import { fetchOwnedGames as steam } from "./steam.js";
 import { fetchOwnedGames as gog } from "./gog.js";
@@ -37,8 +37,10 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
           game_id     = CASE WHEN entitlement.locked = 1 THEN entitlement.game_id ELSE excluded.game_id END`,
   );
 
+  // game_id is left null: matchEntitlements owns the assignment. Guessing a
+  // Game here only to overwrite it a moment later abandons the row it created.
   for (const e of entitlements) {
-    upsert.run(store, e.store_game_id, e.store_title, resolveGame(db, e.store_title), now, now);
+    upsert.run(store, e.store_game_id, e.store_title, null, now, now);
   }
 
   await matchEntitlements(db, store, identify);

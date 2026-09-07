@@ -62,5 +62,8 @@ export async function matchEntitlements(db, store, identify) {
       fallback++;
     }
   }
+  // A Game exists only to hold Entitlements; re-matching can leave one behind.
+  db.exec("DELETE FROM game WHERE id NOT IN (SELECT game_id FROM entitlement WHERE game_id IS NOT NULL)");
+
   return { igdb, fallback };
 }

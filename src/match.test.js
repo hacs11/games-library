@@ -78,3 +78,22 @@ test("a confirmed Entitlement leaves the tray for good", async () => {
   await matchEntitlements(db, "steam", async () => new Map());
   assert.equal(unmatched(db).length, 0, "a later Sync does not reopen it");
 });
+
+test("matching leaves no Games behind that hold no Entitlements", async () => {
+  const db = await seeded("steam", "Half-Life 2", "Portal");
+  // First pass falls back to titles, second identifies them: the title Games
+  // created by the first pass must not survive as phantoms in the autocomplete.
+  await matchEntitlements(db, "steam", async () => new Map());
+  await matchEntitlements(db, "steam", async () =>
+    new Map([
+      ["steam-0", { igdb_id: 233, title: "Half-Life 2" }],
+      ["steam-1", { igdb_id: 358, title: "Portal" }],
+    ]),
+  );
+
+  assert.equal(db.prepare("SELECT count(*) c FROM game").get().c, 2);
+  assert.equal(
+    db.prepare("SELECT count(*) c FROM game WHERE id NOT IN (SELECT game_id FROM entitlement WHERE game_id IS NOT NULL)").get().c,
+    0,
+  );
+});
