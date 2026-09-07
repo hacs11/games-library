@@ -27,8 +27,11 @@ export const layout = (title, body, pending = 0) => `<!doctype html>
   textarea { font: inherit; width: 100%; max-width: 40rem; min-height: 9rem; padding: .4rem; }
   td form { display: inline; }
   td button { font: inherit; font-size: .8rem; padding: 0 .4rem; }
-  .store { font-size: .8rem; border: 1px solid; border-radius: .5rem; padding: 0 .4rem; margin-right: .25rem; white-space: nowrap; }
-  .store.gfn { border-color: #76b900; color: #76b900; font-weight: 600; }
+  .store { display: inline-flex; align-items: center; gap: .1rem; margin-right: .45rem; vertical-align: middle; font-size: .85rem; }
+  .store svg { display: block; border-radius: 50%; }
+  .store.gfn svg { box-shadow: 0 0 0 2px #76b900; }
+  .store .bolt { font-size: .85rem; margin-left: -.3rem; align-self: flex-end; }
+  td { vertical-align: middle; }
   .filters { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
   .filters input[type=search], .filters select { width: auto; font: inherit; padding: .3rem; }
 </style>
@@ -39,13 +42,32 @@ ${body}
 
 const STORE_NAMES = { steam: "Steam", gog: "GOG", epic: "Epic", xbox: "Xbox" };
 
-// A badge marks the Store; the green bolt marks that *this* Store's copy is
+// Inline SVG so the page stays self-contained — no asset requests, nothing to
+// go missing. These are simplified marks in each store's colour, not the
+// official logos: recognisable by silhouette and colour at 18px, which is all
+// a badge needs to do.
+const STORE_ICONS = {
+  steam: `<circle cx="12" cy="12" r="11" fill="#1b2838"/><circle cx="15.5" cy="8.5" r="3.6" fill="none" stroke="#fff" stroke-width="1.6"/><circle cx="8.2" cy="15.4" r="3.1" fill="#fff"/><path d="M5 15.4 15 8.5" stroke="#fff" stroke-width="1.4"/>`,
+  gog: `<circle cx="12" cy="12" r="11" fill="#8b5cf6"/><path d="M15.4 8.6H9.8a1.6 1.6 0 0 0-1.6 1.6v3.6a1.6 1.6 0 0 0 1.6 1.6h5.6v-3.2h-3" fill="none" stroke="#fff" stroke-width="1.7" stroke-linecap="square"/>`,
+  epic: `<rect x="1" y="1" width="22" height="22" rx="5" fill="#2a2a2a"/><path d="M9 6.8h6.2M9 12h5M9 17.2h6.2M9 6.8v10.4" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"/>`,
+  xbox: `<circle cx="12" cy="12" r="11" fill="#107c10"/><path d="M7.4 6.6C9.8 9 14.2 15 16.6 17.4M16.6 6.6C14.2 9 9.8 15 7.4 17.4" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round"/>`,
+};
+
+// A badge names the Store; the green bolt marks that *this* Store's copy is
 // confirmed streamable. Matching is by title for every Store but Steam, so no
 // bolt means "not found in the catalogue", never "will not stream".
-const badge = ({ store, status }) =>
-  `<span class="store${status === "AVAILABLE" ? " gfn" : ""}" title="${status ? `GeForce NOW: ${esc(status)}` : "Not found in the GeForce NOW catalogue — may still stream"}">${
-    esc(STORE_NAMES[store] ?? store)
-  }${status === "AVAILABLE" ? " &#9889;" : ""}</span>`;
+const badge = ({ store, status }) => {
+  const name = STORE_NAMES[store] ?? store;
+  const label = status
+    ? `${name} — GeForce NOW: ${status}`
+    : `${name} — not found in the GeForce NOW catalogue, may still stream`;
+  const icon = STORE_ICONS[store];
+  return `<span class="store${status === "AVAILABLE" ? " gfn" : ""}" title="${esc(label)}">${
+    icon
+      ? `<svg viewBox="0 0 24 24" width="28" height="28" role="img" aria-label="${esc(label)}">${icon}</svg>`
+      : esc(name)
+  }${status === "AVAILABLE" ? `<span class="bolt" aria-hidden="true">&#9889;</span>` : ""}</span>`;
+};
 
 export const listPage = (games, filters = {}) => `
 <form class="filters" method="get" action="/">
