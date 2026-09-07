@@ -10,6 +10,7 @@ const ICONS = {
   lightning: `<path d="M215.79 118.17a8 8 0 0 0-5-5.66L153.18 90.9l14.66-73.33a8 8 0 0 0-13.69-7l-112 120a8 8 0 0 0 3 13l57.63 21.61-14.62 73.25a8 8 0 0 0 13.69 7l112-120a8 8 0 0 0 1.94-7.26Z"/>`,
   grid: `<path d="M104 40H56a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16V56a16 16 0 0 0-16-16Zm96 0h-48a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16V56a16 16 0 0 0-16-16Zm-96 96H56a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16v-48a16 16 0 0 0-16-16Zm96 0h-48a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16v-48a16 16 0 0 0-16-16Z"/>`,
   rows: `<path d="M216 64H40a8 8 0 0 1 0-16h176a8 8 0 0 1 0 16Zm0 56H40a8 8 0 0 1 0-16h176a8 8 0 0 1 0 16Zm0 56H40a8 8 0 0 1 0-16h176a8 8 0 0 1 0 16Zm0 56H40a8 8 0 0 1 0-16h176a8 8 0 0 1 0 16Z"/>`,
+  star: `<path d="M239.2 97.29a16 16 0 0 0-13.81-11L166 81.17l-23.28-55.36a15.95 15.95 0 0 0-29.44 0L90.07 81.17l-59.44 5.11a16 16 0 0 0-9.11 28.06l45.11 39.42-13.52 58.54a16 16 0 0 0 23.84 17.34l51-31 51.05 31a16 16 0 0 0 23.84-17.34l-13.53-58.6 45.1-39.36a16 16 0 0 0 4.79-17.15Z"/>`,
   x: `<path d="m205.66 194.34-8 8a8 8 0 0 1-11.32 0L128 144.4l-58.34 57.94a8 8 0 0 1-11.32-11.32L116.28 133 58.34 74.66a8 8 0 0 1 11.32-11.32L128 121.6l58.34-57.94a8 8 0 0 1 11.32 11.32L139.72 133l57.94 58.34a8 8 0 0 1 0 3Z"/>`,
 };
 
@@ -475,7 +476,17 @@ const CATALOGUE_STORES = {
   NV_BUNDLE: "NVIDIA bundle",
 };
 
-export const discoverPage = (games, filters = {}, total = 0) => `
+// A star is a form, and a form cannot live inside the <a> that is the card —
+// so it sits over it instead, in a relative wrapper.
+const starForm = (item, back, attrs = "") => `<form class="inline" method="post" action="/watch"${attrs}>
+  <input type="hidden" name="title" value="${esc(item.norm_title)}">
+  <input type="hidden" name="back" value="${esc(back)}">
+  <button class="btn btn-secondary btn-icon" style="padding:5px;${item.watched ? "color:var(--color-accent);border-color:var(--color-accent)" : ""}"
+    title="${item.watched ? "In your watchlist — click to remove" : "Add to watchlist"}"
+    aria-label="${item.watched ? "Remove from watchlist" : "Add to watchlist"}">${icon("star", 14)}</button>
+</form>`;
+
+export const discoverPage = (games, filters = {}, total = 0, watching = 0) => `
 ${title("Discover", {
   count: `${total} titles`,
   intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's and GOG's, in AUD.",
@@ -501,6 +512,8 @@ ${title("Discover", {
   <button class="btn btn-secondary">Apply</button>
   <a class="gfn-toggle${filters.sale ? " on" : ""}" href="/discover${qs({ ...filters, sale: !filters.sale })}"
      style="${filters.sale ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">On sale only</a>
+  <a class="gfn-toggle${filters.watch ? " on" : ""}" href="/discover${qs({ ...filters, watch: !filters.watch })}"
+     style="${filters.watch ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">${icon("star", 12)} Watchlist${watching ? ` (${watching})` : ""}</a>
 </form>
 <hr class="rule-fade" style="margin-bottom:22px">
 ${
@@ -509,7 +522,9 @@ ${
     : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
 ${games
   .map(
-    (g) => `<a class="card elev-sm" href="/discover${qs({ ...filters, title: g.norm_title })}" style="display:block;color:inherit;text-decoration:none">
+    (g) => `<div style="position:relative">
+${starForm(g, `/discover${qs(filters)}`, ` style="position:absolute;top:8px;right:8px;z-index:1"`)}
+<a class="card elev-sm" href="/discover${qs({ ...filters, title: g.norm_title })}" style="display:block;color:inherit;text-decoration:none">
   <div style="display:flex;gap:12px">
     <span class="thumb" style="width:52px;height:70px;border-radius:6px;background:var(--color-bg)">${
       g.cover_url ? `<img src="${esc(g.cover_url)}" alt="" loading="lazy">` : `<span style="font-size:15px">${esc(initials(g.title))}</span>`
@@ -525,7 +540,7 @@ ${games
       </div>
     </div>
   </div>
-</a>`,
+</a></div>`,
   )
   .join("\n")}
 </div>`
@@ -592,6 +607,7 @@ export const discoverPanel = (item, closeHref) => {
   </div>
   <p class="muted" style="font-size:11px;margin:8px 0 0">Support is per store — buy it on a store listed above, or it will not stream.</p>
   <div class="panel-actions">
+    ${starForm(item, `${closeHref}${closeHref.includes("?") ? "&" : "?"}title=${encodeURIComponent(item.norm_title)}`)}
     <a class="btn btn-primary" href="https://play.geforcenow.com/" target="_blank" rel="noopener">Open GeForce NOW</a>
     ${cheapest[0] ? `<a class="btn btn-secondary" href="${esc(catalogueUrl(cheapest[0].store, item.title))}" target="_blank" rel="noopener">Open store page</a>` : ""}
   </div>

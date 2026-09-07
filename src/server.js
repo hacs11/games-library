@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import {
   open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
   discoverGames, discoverCount, discoverDetail, hiddenCount, staleSources, genreList, ratingCounts,
-  ownedCount, gameDetail, countGames, priceCounts, credential,
+  ownedCount, gameDetail, countGames, priceCounts, credential, toggleWatch, watchCount,
 } from "./db.js";
 import { syncStore } from "./sync.js";
 import { syncGfn, applyGfn } from "./gfn.js";
@@ -100,6 +100,7 @@ const routes = {
       q: p.get("q") ?? "",
       store: p.get("store") ?? "",
       sale: p.get("sale") === "1",
+      watch: p.get("watch") === "1",
       sort: p.get("sort") ?? "",
     };
     // Same shape as the Library panel: its own URL, so it is linkable and the
@@ -107,10 +108,18 @@ const routes = {
     const selected = p.get("title") ? discoverDetail(db, p.get("title")) : null;
     html(
       res,
-      page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters)), "/discover", {
+      page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters), watchCount(db)), "/discover", {
         panel: discoverPanel(selected, `/discover${queryString(filters)}`),
       }),
     );
+  },
+
+  // Starring returns to the exact Discover URL it was pressed on, so the
+  // filters and any open panel survive the round trip.
+  "POST /watch": async (req, res) => {
+    const { title, back = "/discover" } = await body(req);
+    toggleWatch(db, title);
+    seeOther(res, back.startsWith("/discover") ? back : "/discover");
   },
 
   "GET /unmatched": (req, res) => {

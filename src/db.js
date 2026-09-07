@@ -131,6 +131,13 @@ const MIGRATIONS = [
                       discount_percent, formatted, fetched_at FROM steam_price`);
     db.exec("DROP TABLE steam_price");
   },
+  // Starred discover titles. Keyed by norm_title like the rest of Discover:
+  // these are catalogue entries with no Game row behind them.
+  (db) =>
+    db.exec(`CREATE TABLE IF NOT EXISTS watchlist (
+      norm_title TEXT PRIMARY KEY,
+      added_at   TEXT NOT NULL
+    )`),
 ];
 
 export function open(path = "data/library.db") {
@@ -235,7 +242,7 @@ export function unmatched(db, afterId = 0) {
 // GeForce NOW games you do not own, and where you could buy them. The NVIDIA
 // appid rows are excluded: they are a Steam-only supplement to the same
 // catalogue and would double every Steam entry.
-export function discoverGames(db, { q = "", store = "", sale = false, sort = "" } = {}, limit = 200) {
+export function discoverGames(db, { q = "", store = "", sale = false, watch = false, sort = "" } = {}, limit = 200) {
   return db
     .prepare(
       `SELECT g.norm_title,
@@ -243,6 +250,7 @@ export function discoverGames(db, { q = "", store = "", sale = false, sort = "" 
               max(g.image_url) AS cover_url,
               max(g.genres) AS genres,
               group_concat(DISTINCT g.store) AS stores,
+              EXISTS (SELECT 1 FROM watchlist w WHERE w.norm_title = g.norm_title) AS watched,
               ${PRICE_COLUMNS}
          FROM gfn_entry g
          ${PRICE_JOINS}
@@ -253,12 +261,13 @@ export function discoverGames(db, { q = "", store = "", sale = false, sort = "" 
           AND g.norm_title NOT IN (SELECT gfn_title FROM entitlement WHERE gfn_title IS NOT NULL)
           AND (:q = '' OR g.title LIKE '%' || :q || '%')
           AND (:store = '' OR EXISTS (SELECT 1 FROM gfn_entry s WHERE s.norm_title = g.norm_title AND s.store = :store))
+          AND (:watch = 0 OR g.norm_title IN (SELECT norm_title FROM watchlist))
         GROUP BY g.norm_title
        HAVING (:sale = 0 OR best_discount > 0)
         ORDER BY ${sort === "discount" ? "best_discount IS NULL, best_discount DESC," : ""} min(g.title) COLLATE NOCASE
         ${limit > 0 ? `LIMIT ${limit}` : ""}`,
     )
-    .all({ q, store, sale: sale ? 1 : 0 })
+    .all({ q, store, sale: sale ? 1 : 0, watch: watch ? 1 : 0 })
     .map(withPrices);
 }
 
@@ -291,8 +300,26 @@ function withPrices(r) {
     { store: "steam", formatted: r.steam_price, discount: r.steam_discount },
     { store: "gog", formatted: r.gog_price, discount: r.gog_discount },
   ].filter((p) => p.formatted);
-  return { ...r, stores: r.stores.split(",").sort(), prices, best_discount: r.best_discount || null };
+  return {
+    ...r,
+    stores: r.stores.split(",").sort(),
+    prices,
+    best_discount: r.best_discount || null,
+    watched: !!r.watched,
+  };
 }
+
+// Starring is a toggle: the same button both adds and removes.
+export function toggleWatch(db, normTitle) {
+  const { changes } = db.prepare("DELETE FROM watchlist WHERE norm_title = ?").run(String(normTitle));
+  if (changes === 0) {
+    db.prepare("INSERT INTO watchlist (norm_title, added_at) VALUES (?, ?)")
+      .run(String(normTitle), new Date().toISOString());
+  }
+  return changes === 0;
+}
+
+export const watchCount = (db) => db.prepare("SELECT count(*) c FROM watchlist").get().c;
 
 export function discoverCount(db, filters = {}) {
   return discoverGames(db, filters, 0).length;
@@ -322,6 +349,7 @@ export function discoverDetail(db, normTitle) {
               max(g.image_url) AS cover_url,
               max(g.genres) AS genres,
               group_concat(DISTINCT g.store) AS stores,
+              EXISTS (SELECT 1 FROM watchlist w WHERE w.norm_title = g.norm_title) AS watched,
               ${PRICE_COLUMNS}
          FROM gfn_entry g
          ${PRICE_JOINS}

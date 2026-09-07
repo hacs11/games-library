@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { open, saveCredential, discoverGames, discoverCount } from "./db.js";
+import { open, saveCredential, discoverGames, discoverCount, toggleWatch, watchCount } from "./db.js";
 import { syncGfn } from "./gfn.js";
 import { syncStore } from "./sync.js";
 import { matchEntitlements } from "./match.js";
@@ -82,4 +82,22 @@ test("filtering by store narrows to what that store sells", async () => {
   const db = await library();
   assert.deepEqual(discoverGames(db, { store: "GOG" }).map((g) => g.title), ["Baldur's Gate 3"]);
   assert.deepEqual(discoverGames(db, { store: "XBOX" }).map((g) => g.title), ["Halo Infinite"]);
+});
+
+test("starring a title is a toggle, and the watchlist filter shows only what is starred", () => {
+  const db = open(":memory:");
+  db.exec(`
+    INSERT INTO gfn_entry (title, norm_title, store, status) VALUES
+      ('Kept', 'kept', 'STEAM', 'AVAILABLE'),
+      ('Ignored', 'ignored', 'STEAM', 'AVAILABLE');
+  `);
+
+  assert.equal(toggleWatch(db, "kept"), true, "first press adds");
+  assert.equal(watchCount(db), 1);
+  assert.deepEqual(discoverGames(db, { watch: true }).map((g) => g.title), ["Kept"]);
+  assert.equal(discoverGames(db).find((g) => g.title === "Kept").watched, true);
+  assert.equal(discoverCount(db, { watch: true }), 1);
+
+  assert.equal(toggleWatch(db, "kept"), false, "second press removes");
+  assert.deepEqual(discoverGames(db, { watch: true }), []);
 });
