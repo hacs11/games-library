@@ -97,6 +97,10 @@ export const layout = (title, body, { path = "/", pending = 0, panel = "" } = {}
   .search-wrap { position: relative; flex: 1 1 240px; min-width: 200px; max-width: 320px; }
   .search-wrap svg { position: absolute; left: 10px; top: 11px; opacity: 0.45; pointer-events: none; }
   .search-wrap .input { padding-left: 31px; width: 100%; }
+  /* Nocturne's .input is width:100%, which makes every control claim a whole
+     row. In the filter bar they size to their own min-width instead. */
+  .filters .input { width: auto; }
+  .filters .search-wrap .input { width: 100%; }
   select.input { appearance: none; padding-right: 26px; }
   .gfn-toggle {
     display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 7px 12px;
