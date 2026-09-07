@@ -1,9 +1,10 @@
 import { credential } from "./db.js";
 import { resolveGame, matchEntitlements } from "./match.js";
 import { identify } from "./igdb.js";
-import { fetchOwnedGames } from "./steam.js";
+import { fetchOwnedGames as steam } from "./steam.js";
+import { fetchOwnedGames as gog } from "./gog.js";
 
-const FETCHERS = { steam: fetchOwnedGames };
+const FETCHERS = { steam, gog };
 
 // Each Store syncs alone: a failure marks that Store and leaves every other
 // Store's Entitlements untouched. Entitlements that stop appearing keep their
@@ -14,11 +15,15 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
 
   let entitlements;
   try {
-    entitlements = await fetcher(cred.data);
+    entitlements = await fetcher(cred.data, db);
   } catch (err) {
-    db.prepare(
-      "UPDATE store_credential SET status = 'error', last_error = ? WHERE store = ?",
-    ).run(err.message, store);
+    // An expired login is a different problem from a broken Sync: it needs you,
+    // not a retry.
+    db.prepare("UPDATE store_credential SET status = ?, last_error = ? WHERE store = ?").run(
+      err.reauth ? "needs_reauth" : "error",
+      err.message,
+      store,
+    );
     throw err;
   }
 

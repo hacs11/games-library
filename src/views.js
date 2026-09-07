@@ -1,3 +1,5 @@
+import { AUTH_URL as GOG_AUTH_URL } from "./gog.js";
+
 const esc = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 
@@ -61,6 +63,7 @@ export const connectPage = (rows) => {
   </fieldset>
 </form>
 ${steam?.data ? `<form method="post" action="/sync/steam"><button>Sync Steam</button></form>` : ""}
+${gogFieldset(rows)}
 ${igdbFieldset(rows)}
 `;
 };
@@ -69,7 +72,7 @@ const status = (row) =>
   !row
     ? `<p class="status">Not connected.</p>`
     : row.last_error
-      ? `<p class="error">${esc(row.last_error)}</p>`
+      ? `<p class="error">${row.status === "needs_reauth" ? "Login expired. " : ""}${esc(row.last_error)}</p>`
       : `<p class="status">${row.last_synced_at ? `Last synced ${esc(row.last_synced_at)}` : "Connected, never synced."}</p>`;
 
 export const igdbFieldset = (rows) => {
@@ -112,4 +115,23 @@ export const unmatchedPage = (items, titles) => {
   </div>
 </form>
 <datalist id="games">${titles.map((t) => `<option value="${esc(t)}">`).join("")}</datalist>`;
+};
+
+export const gogFieldset = (rows) => {
+  const gog = rows.find((r) => r.store === "gog");
+  const connected = gog?.data && gog.status !== "needs_reauth";
+  return `
+<form method="post" action="/connect/gog">
+  <fieldset>
+    <legend>GOG</legend>
+    <p class="hint">
+      <a href="${GOG_AUTH_URL}" target="_blank" rel="noopener">Open the GOG login</a> in a new tab.
+      After signing in you land on a blank page — copy its whole address from the URL bar and paste it below.
+    </p>
+    <label>Login URL (or just the code) <input name="pasted" placeholder="https://embed.gog.com/on_login_success?...code=..." ${connected ? "" : "required"}></label>
+    <button>${connected ? "Reconnect" : "Connect"}</button>
+    ${status(gog)}
+  </fieldset>
+</form>
+${connected ? `<form method="post" action="/sync/gog"><button>Sync GOG</button></form>` : ""}`;
 };

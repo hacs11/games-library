@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { open, listGames, stores, saveCredential, unmatched, gameTitles } from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
+import { extractCode, exchangeCode } from "./gog.js";
 import { layout, listPage, connectPage, unmatchedPage } from "./views.js";
 
 const db = open();
@@ -48,15 +49,30 @@ const routes = {
     seeOther(res, "/connect");
   },
 
-  "POST /sync/steam": async (_req, res) => {
-    // A failed Store is recorded on its own row by syncStore; the page shows it.
-    await syncStore(db, "steam").catch(() => {});
+  "POST /connect/gog": async (req, res) => {
+    const code = extractCode((await body(req)).pasted ?? "");
+    if (code) {
+      await exchangeCode(code)
+        .then((tokens) => saveCredential(db, "gog", tokens))
+        .catch((err) =>
+          db.prepare("UPDATE store_credential SET status='needs_reauth', last_error=? WHERE store='gog'").run(err.message),
+        );
+    }
     seeOther(res, "/connect");
   },
 };
 
+// Every Store syncs through the same route; a failure is recorded on that
+// Store's own row by syncStore, and the Connect page shows it.
+const syncRoute = (path) => {
+  const store = path.match(/^\/sync\/(\w+)$/)?.[1];
+  return store && ((_req, res) => syncStore(db, store).catch(() => {}).then(() => seeOther(res, "/connect")));
+};
+
 createServer((req, res) => {
-  const handler = routes[`${req.method} ${new URL(req.url, "http://x").pathname}`];
+  const path = new URL(req.url, "http://x").pathname;
+  const handler =
+    routes[`${req.method} ${path}`] || (req.method === "POST" ? syncRoute(path) : null);
   if (!handler) return res.writeHead(404).end("Not found");
   Promise.resolve(handler(req, res)).catch((err) => {
     console.error(err);
