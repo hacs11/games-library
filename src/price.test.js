@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { open, discoverGames, discoverCount, discoverDetail, priceCounts } from "./db.js";
 import { syncAppIds, fetchPrices } from "./steam.js";
 import { syncCatalogue } from "./gog.js";
+import { syncCatalogue as syncXboxCatalogue } from "./xbox.js";
 import { syncGfn } from "./gfn.js";
 
 const stub = (handler) => {
@@ -95,8 +96,10 @@ test("the on-sale filter and discount sort use the real discount", async () => {
   assert.deepEqual(priceCounts(db), {
     apps: 2,
     products: 0,
+    titles: 0,
     steam: { priced: 2, onSale: 1 },
     gog: { priced: 0, onSale: 0 },
+    xbox: { priced: 0, onSale: 0 },
   });
 });
 
@@ -172,4 +175,73 @@ test("the detail panel resolves one catalogue title by its normalised name", asy
   assert.deepEqual(item.stores, ["GOG", "STEAM"]);
   assert.deepEqual(item.prices.map((p) => p.store), ["steam", "gog"]);
   assert.equal(discoverDetail(db, "nothing here"), null);
+});
+
+// The store's browse service answers with every Play Anywhere title and its
+// price, discounted or not — so an Xbox row is priced all year, not only during
+// a sale. Two products under one name are dropped, as everywhere else.
+const XBOX_PAGE = {
+  channels: { all: { totalItems: 3 } },
+  productSummaries: {
+    0: { productId: "9BG3", title: "Baldur's Gate 3",
+         specificPrices: { purchaseable: [{ listPrice: 89.95, msrp: 89.95, discountPercentage: 0, currency: "AUD" }] } },
+    1: { productId: "9HAD", title: "Hades",
+         specificPrices: { purchaseable: [{ listPrice: 14.99, msrp: 29.95, discountPercentage: 49.9, currency: "AUD" }] } },
+    2: { productId: "9HAD2", title: "hades",
+         specificPrices: { purchaseable: [{ listPrice: 1, msrp: 1, discountPercentage: 0, currency: "AUD" }] } },
+  },
+};
+
+const withXbox = async (db) => {
+  const restore = stub(async () => Response.json(XBOX_PAGE));
+  try {
+    return await syncXboxCatalogue(db);
+  } finally {
+    restore();
+  }
+};
+
+test("Xbox prices come from the Play Anywhere catalogue, ambiguous titles excluded", async () => {
+  const db = await seeded();
+  const result = await withXbox(db);
+  assert.deepEqual(result, { products: 2, ambiguous: 1, stored: 1, priced: 1 });
+  assert.deepEqual(priceCounts(db).xbox, { priced: 1, onSale: 0 });
+  assert.equal(priceCounts(db).titles, 1, "Hades is claimed by two products, so it is dropped");
+});
+
+test("an Xbox price only shows where GeForce NOW lists the title under Xbox", async () => {
+  const db = await seeded();
+  await withXbox(db);
+  // CLOUDGG lists Baldur's Gate 3 under Steam and GOG, not Xbox.
+  const bg3 = discoverGames(db).find((g) => g.title === "Baldur's Gate 3");
+  assert.deepEqual(bg3.prices.map((p) => p.store), ["steam"]);
+
+  db.exec("INSERT INTO gfn_entry (title, norm_title, store, status) VALUES ('Baldur''s Gate 3', 'baldur s gate 3', 'XBOX', 'AVAILABLE')");
+  const now = discoverGames(db).find((g) => g.title === "Baldur's Gate 3");
+  assert.deepEqual(now.prices.map((p) => [p.store, p.formatted]), [["steam", "A$ 89.95"], ["xbox", "A$89.95"]]);
+});
+
+test("a discount rounds to whole percent, since the service returns 19.999998 for a fifth off", async () => {
+  const db = open(":memory:");
+  db.exec(`
+    INSERT INTO gfn_entry (title, norm_title, store, status) VALUES ('Hades', 'hades', 'XBOX', 'AVAILABLE');
+  `);
+  const restore = stub(async () =>
+    Response.json({
+      channels: { all: { totalItems: 1 } },
+      productSummaries: {
+        0: { productId: "9HAD", title: "Hades",
+             specificPrices: { purchaseable: [{ listPrice: 14.99, msrp: 29.95, discountPercentage: 49.983306, currency: "AUD" }] } },
+      },
+    }),
+  );
+  try {
+    await syncXboxCatalogue(db);
+  } finally {
+    restore();
+  }
+
+  const [game] = discoverGames(db);
+  assert.deepEqual(game.prices, [{ store: "xbox", formatted: "A$14.99", discount: 50 }]);
+  assert.equal(game.best_discount, 50);
 });

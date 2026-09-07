@@ -486,6 +486,9 @@ const starForm = (item, back, attrs = "") => `<form class="inline" method="post"
     aria-label="${item.watched ? "Remove from watchlist" : "Add to watchlist"}">${icon("star", 14)}</button>
 </form>`;
 
+// The Stores whose own catalogue we can read a price out of.
+const PRICE_STORES = ["steam", "gog", "xbox"];
+
 export const discoverPage = (games, filters = {}, total = 0, watching = 0) => `
 ${title("Discover", {
   count: `${total} titles`,
@@ -595,7 +598,7 @@ export const discoverPanel = (item, closeHref) => {
     .join("")}
   ${
     item.prices.length < item.stores.length
-      ? `<p class="muted" style="font-size:11px;margin:10px 0 0">Only Steam and GOG publish prices we can read. The rest stream all the same.</p>`
+      ? `<p class="muted" style="font-size:11px;margin:10px 0 0">Only Steam, GOG and Xbox publish prices we can read. The rest stream all the same.</p>`
       : ""
   }
   <h6 style="margin-top:20px">GeForce NOW</h6>
@@ -620,6 +623,7 @@ const catalogueUrl = (store, title) => {
   return {
     steam: `https://store.steampowered.com/search/?term=${q}`,
     gog: `https://www.gog.com/en/games?query=${q}`,
+    xbox: `https://www.xbox.com/en-AU/Search/Results?q=${q}`,
   }[store] ?? "#";
 };
 
@@ -779,12 +783,14 @@ ${connectCard({
 ${connectCard({
   store: "steam",
   label: "Catalogue prices",
-  row: { status: counts.prices?.steam?.priced || counts.prices?.gog?.priced ? "connected" : undefined },
-  counts: counts.prices?.steam?.priced || counts.prices?.gog?.priced
-    ? `Steam ${counts.prices.steam.priced} priced · ${counts.prices.steam.onSale} on sale — GOG ${counts.prices.gog.priced} priced · ${counts.prices.gog.onSale} on sale`
+  row: { status: PRICE_STORES.some((s) => counts.prices?.[s]?.priced) ? "connected" : undefined },
+  counts: PRICE_STORES.some((s) => counts.prices?.[s]?.priced)
+    ? PRICE_STORES
+        .map((s) => `${STORE_NAMES[s]} ${counts.prices[s].priced} priced · ${counts.prices[s].onSale} on sale`)
+        .join(" — ")
     : "not fetched yet",
   action: `<form class="inline" method="post" action="/prices"><button class="btn btn-secondary" style="font-size:12px">Refresh prices</button></form>`,
-  body: `<p class="intro" style="margin:0">Steam and GOG prices in AUD for the Discover catalogue, resolved by title against each store's own catalogue. Epic publishes a list price but no discount, and Xbox none at all, so those titles show no price. Takes a couple of minutes.</p>`,
+  body: `<p class="intro" style="margin:0">Steam, GOG and Xbox prices in AUD for the Discover catalogue, resolved by title against each store's own catalogue. Xbox covers Play Anywhere titles only, the same rule your Xbox library follows. Epic publishes a list price but no discount, so its titles show no price. Takes a couple of minutes.</p>`,
 })}
 ${connectCard({
   store: "igdb",

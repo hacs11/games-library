@@ -189,6 +189,7 @@ const routes = {
     // GOG's catalogue is unauthenticated, so it runs whether or not Steam is
     // connected — and one store failing must not cost you the other's prices.
     await gog.syncCatalogue(db).catch((err) => console.error(err.message));
+    await xbox.syncCatalogue(db).catch((err) => console.error(err.message));
     seeOther(res, "/connect");
   },
 

@@ -138,6 +138,13 @@ const MIGRATIONS = [
       norm_title TEXT PRIMARY KEY,
       added_at   TEXT NOT NULL
     )`),
+  // A third catalogue. Xbox ids are Store product ids ("9P6HVHDP2PGK"), and
+  // only Play Anywhere titles are in it — the same rule the Entitlements follow.
+  (db) =>
+    db.exec(`CREATE TABLE IF NOT EXISTS xbox_app (
+      norm_title TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL
+    )`),
 ];
 
 export function open(path = "data/library.db") {
@@ -282,7 +289,10 @@ const PRICE_COLUMNS = `max(sp.formatted) AS steam_price,
               max(sp.discount_percent) AS steam_discount,
               max(gp.formatted) AS gog_price,
               max(gp.discount_percent) AS gog_discount,
-              max(coalesce(sp.discount_percent, 0), coalesce(gp.discount_percent, 0)) AS best_discount`;
+              max(xp.formatted) AS xbox_price,
+              max(xp.discount_percent) AS xbox_discount,
+              max(coalesce(sp.discount_percent, 0), coalesce(gp.discount_percent, 0),
+                  coalesce(xp.discount_percent, 0)) AS best_discount`;
 
 // The `sells` clause is what keeps a price tied to a Store you could actually
 // stream from. Without it a GOG sale leaks into best_discount and badges a
@@ -293,12 +303,15 @@ const sells = (catalogueStore) =>
 const PRICE_JOINS = `LEFT JOIN steam_app a ON a.norm_title = g.norm_title AND ${sells("STEAM")}
          LEFT JOIN catalogue_price sp ON sp.store = 'steam' AND sp.store_id = a.appid
          LEFT JOIN gog_app ga ON ga.norm_title = g.norm_title AND ${sells("GOG")}
-         LEFT JOIN catalogue_price gp ON gp.store = 'gog' AND gp.store_id = ga.product_id`;
+         LEFT JOIN catalogue_price gp ON gp.store = 'gog' AND gp.store_id = ga.product_id
+         LEFT JOIN xbox_app xa ON xa.norm_title = g.norm_title AND ${sells("XBOX")}
+         LEFT JOIN catalogue_price xp ON xp.store = 'xbox' AND xp.store_id = xa.product_id`;
 
 function withPrices(r) {
   const prices = [
     { store: "steam", formatted: r.steam_price, discount: r.steam_discount },
     { store: "gog", formatted: r.gog_price, discount: r.gog_discount },
+    { store: "xbox", formatted: r.xbox_price, discount: r.xbox_discount },
   ].filter((p) => p.formatted);
   return {
     ...r,
@@ -328,8 +341,9 @@ export function discoverCount(db, filters = {}) {
 export const priceCounts = (db) => ({
   apps: db.prepare("SELECT count(*) c FROM steam_app").get().c,
   products: db.prepare("SELECT count(*) c FROM gog_app").get().c,
+  titles: db.prepare("SELECT count(*) c FROM xbox_app").get().c,
   ...Object.fromEntries(
-    ["steam", "gog"].map((store) => [
+    ["steam", "gog", "xbox"].map((store) => [
       store,
       {
         priced: db.prepare("SELECT count(*) c FROM catalogue_price WHERE store = ? AND final_cents IS NOT NULL").get(store).c,
