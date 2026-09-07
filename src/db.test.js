@@ -19,10 +19,11 @@ test("listGames groups Entitlements into one row per Game", () => {
 
   const games = listGames(db);
   assert.deepEqual(
-    games.map((g) => [g.title, g.stores.sort(), g.streamable]),
+    games.map((g) => [g.title, g.stores.map((s) => `${s.store}:${s.status ?? ""}`).sort(), g.streamable]),
     [
-      ["Cyberpunk 2077", ["epic", "gog"], true], // two Stores, one row; GFN from either
-      ["Hades", ["steam"], false],
+      // two Stores, one row; the badge is per Entitlement, the flag per Game
+      ["Cyberpunk 2077", ["epic:", "gog:AVAILABLE"], true],
+      ["Hades", ["steam:"], false],
     ],
   ); // non-game hidden, unmatched Entitlement absent
 });

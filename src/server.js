@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { open, listGames, stores, saveCredential, unmatched, gameTitles } from "./db.js";
 import { resolveGame } from "./match.js";
 import { syncStore } from "./sync.js";
+import { syncGfn } from "./gfn.js";
 import * as gog from "./gog.js";
 import * as epic from "./epic.js";
 
@@ -23,7 +24,11 @@ async function body(req) {
 const page = (title, body) => layout(title, body, unmatched(db).length);
 
 const routes = {
-  "GET /": (_req, res) => html(res, page("Library", listPage(listGames(db)))),
+  "GET /": (req, res) => {
+    const p = new URL(req.url, "http://x").searchParams;
+    const filters = { q: p.get("q") ?? "", store: p.get("store") ?? "", gfn: p.get("gfn") === "1" };
+    html(res, page("Library", listPage(listGames(db, filters), filters)));
+  },
 
   "GET /connect": (_req, res) => html(res, page("Connect", connectPage(stores(db)))),
 
@@ -77,6 +82,20 @@ const routes = {
 // Store's own row by syncStore, and the Connect page shows it.
 const syncRoute = (path) => {
   const store = path.match(/^\/sync\/(\w+)$/)?.[1];
+  // GeForce NOW is a public catalogue, not a Store with a Connection.
+  if (store === "gfn") {
+    return (_req, res) =>
+      syncGfn(db)
+        .catch((err) =>
+          db
+            .prepare(
+              `INSERT INTO store_credential (store, status, last_error) VALUES ('gfn', 'error', ?)
+                 ON CONFLICT (store) DO UPDATE SET status = 'error', last_error = excluded.last_error`,
+            )
+            .run(err.message),
+        )
+        .then(() => seeOther(res, "/connect"));
+  }
   return store && ((_req, res) => syncStore(db, store).catch(() => {}).then(() => seeOther(res, "/connect")));
 };
 

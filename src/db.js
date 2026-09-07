@@ -62,26 +62,39 @@ export function open(path = "data/library.db") {
   db.exec(SCHEMA);
   addColumn(db, "entitlement", "confidence TEXT");
   addColumn(db, "entitlement", "alt_id TEXT");
+  addColumn(db, "gfn_entry", "norm_title TEXT");
   return db;
 }
 
 // One row per Game, with the Stores it was bought in. Entitlements with no
 // Game yet (unmatched) are deliberately absent — they live in the tray.
-export function listGames(db) {
+export function listGames(db, { q = "", store = "", gfn = false } = {}) {
   return db
     .prepare(
       `SELECT g.id,
               g.title,
-              group_concat(e.store, ',') AS stores,
+              group_concat(e.store || ':' || coalesce(e.gfn_status, ''), ',') AS stores,
               max(e.gfn_status = 'AVAILABLE') AS streamable
          FROM game g
          JOIN entitlement e ON e.game_id = g.id
         WHERE g.is_game = 1
+          AND (:q = '' OR g.title LIKE '%' || :q || '%')
+          AND (:store = '' OR EXISTS (SELECT 1 FROM entitlement s WHERE s.game_id = g.id AND s.store = :store))
         GROUP BY g.id
+       HAVING (:gfn = 0 OR streamable = 1)
         ORDER BY g.title COLLATE NOCASE`,
     )
-    .all()
-    .map((r) => ({ ...r, stores: r.stores.split(","), streamable: !!r.streamable }));
+    .all({ q, store, gfn: gfn ? 1 : 0 })
+    .map((r) => ({
+      ...r,
+      streamable: !!r.streamable,
+      // "steam:AVAILABLE" -> { store, status }: GFN support belongs to the
+      // Entitlement, so each badge carries its own.
+      stores: r.stores.split(",").map((s) => {
+        const [store, status] = s.split(":");
+        return { store, status: status || null };
+      }),
+    }));
 }
 
 export function credential(db, store) {

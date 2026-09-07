@@ -24,27 +24,55 @@ export const layout = (title, body, pending = 0) => `<!doctype html>
   .review { font-size: 1.3rem; margin: 1rem 0 .25rem; }
   .review small { display: block; font-size: .8rem; opacity: .7; font-weight: normal; }
   .actions { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; }
-  .store { font-size: .8rem; border: 1px solid; border-radius: .5rem; padding: 0 .4rem; margin-right: .25rem; }
+  .store { font-size: .8rem; border: 1px solid; border-radius: .5rem; padding: 0 .4rem; margin-right: .25rem; white-space: nowrap; }
+  .store.gfn { border-color: #76b900; color: #76b900; font-weight: 600; }
+  .filters { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+  .filters input[type=search], .filters select { width: auto; font: inherit; padding: .3rem; }
 </style>
 <h1>Games Library</h1>
 <nav><a href="/">Library</a><a href="/unmatched">Unmatched${pending ? ` (${pending})` : ""}</a><a href="/connect">Connect</a></nav>
 ${body}
 `;
 
-export const listPage = (games) =>
+const STORE_NAMES = { steam: "Steam", gog: "GOG", epic: "Epic", xbox: "Xbox" };
+
+// A badge marks the Store; the green bolt marks that *this* Store's copy is
+// confirmed streamable. Matching is by title for every Store but Steam, so no
+// bolt means "not found in the catalogue", never "will not stream".
+const badge = ({ store, status }) =>
+  `<span class="store${status === "AVAILABLE" ? " gfn" : ""}" title="${status ? `GeForce NOW: ${esc(status)}` : "Not in NVIDIA's public list — may still stream"}">${
+    esc(STORE_NAMES[store] ?? store)
+  }${status === "AVAILABLE" ? " &#9889;" : ""}</span>`;
+
+export const listPage = (games, filters = {}) => `
+<form class="filters" method="get" action="/">
+  <input type="search" name="q" placeholder="Search titles" value="${esc(filters.q ?? "")}">
+  <select name="store">
+    <option value="">All stores</option>
+    ${Object.entries(STORE_NAMES)
+      .map(([v, l]) => `<option value="${v}"${filters.store === v ? " selected" : ""}>${l}</option>`)
+      .join("")}
+  </select>
+  <label style="display:inline"><input type="checkbox" name="gfn" value="1" style="width:auto"${filters.gfn ? " checked" : ""}> Confirmed on GeForce NOW</label>
+  <button>Filter</button>
+  ${filters.q || filters.store || filters.gfn ? `<a href="/">Clear</a>` : ""}
+</form>
+${
   games.length === 0
-    ? `<p class="empty">No games yet. Connect a store and sync to fill this in.</p>`
-    : `<table>
+    ? `<p class="empty">Nothing here. Connect a store and sync, or widen the filters.</p>`
+    : `<p class="status">${games.length} game${games.length === 1 ? "" : "s"}.</p>
+<table>
   <tr><th>Game</th><th>Stores</th></tr>
   ${games
     .map(
       (g) => `<tr>
     <td>${esc(g.title)}</td>
-    <td>${g.stores.map((s) => `<span class="store">${esc(s)}</span>`).join("")}</td>
+    <td>${g.stores.map(badge).join("")}</td>
   </tr>`,
     )
     .join("\n  ")}
-</table>`;
+</table>`
+}`;
 
 const STEAM_HINT = `Key from <a href="https://steamcommunity.com/dev/apikey">steamcommunity.com/dev/apikey</a>.
 Your SteamID is the 17-digit number — and your profile's <em>Game details</em> must be set to Public,
@@ -66,6 +94,7 @@ export const connectPage = (rows) => {
 ${steam?.data ? `<form method="post" action="/sync/steam"><button>Sync Steam</button></form>` : ""}
 ${oauthFieldset(rows, "gog")}
 ${oauthFieldset(rows, "epic")}
+${gfnFieldset(rows)}
 ${igdbFieldset(rows)}
 `;
 };
@@ -151,4 +180,18 @@ export const oauthFieldset = (rows, store) => {
   </fieldset>
 </form>
 ${connected ? `<form method="post" action="/sync/${store}"><button>Sync ${label}</button></form>` : ""}`;
+};
+
+export const gfnFieldset = (rows) => {
+  const gfn = rows.find((r) => r.store === "gfn");
+  return `
+<fieldset>
+  <legend>GeForce NOW</legend>
+  <p class="hint">NVIDIA's Australian catalogue (the Pentanet alliance list), which differs from the
+    global one. No login needed. Support is per store — a game may stream from GOG but not Epic.</p>
+  <p class="hint">Source: Pentanet's own catalogue at cloud.gg — 2,200+ games. Matching is by title
+    except on Steam, so a game with no badge may still stream; absence is not a no.</p>
+  ${status(gfn)}
+</fieldset>
+<form method="post" action="/sync/gfn"><button>Sync GeForce NOW</button></form>`;
 };
