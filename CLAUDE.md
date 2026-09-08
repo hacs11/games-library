@@ -19,12 +19,13 @@ Writing to `data/library.db` from the host while the container is up corrupts th
 
 `CONTEXT.md` defines the vocabulary — Game, Entitlement, Store, Sync, Connection, Play Anywhere, Unmatched Entitlement — with the words to avoid for each. Use these names in code, comments, commit messages and UI copy.
 
-`docs/adr/` holds four decisions that most changes will touch. Read the relevant one before working against it:
+`docs/adr/` holds five decisions that most changes will touch. Read the relevant one before working against it:
 
 - **0001** Games are inferred by matching Entitlements against IGDB, never reported by a Store.
 - **0002** Xbox Entitlements are typed by hand, Play Anywhere only.
 - **0003** GeForce NOW support belongs to an *Entitlement*, not a Game.
 - **0004** Compose-only, every credential in SQLite, entered through the Connect page.
+- **0005** Epic stays unpriced: Cloudflare means a browser, and a browser is not worth 2.2% of the catalogue.
 
 ## Architecture
 
@@ -47,7 +48,7 @@ Every one of these was verified against the live service before being written do
 | Steam | `IStoreService/GetAppList` for ids, `appdetails?filters=price_overview` 100 appids at a time. Metacritic is one appid per request and rate limited to ~200 per 5 min, so misses are remembered permanently. |
 | GOG | `catalog.gog.com/v1/catalog`, unauthenticated, 100/page. Galaxy's own public OAuth client for owned games. |
 | Xbox | `emerald.xboxservices.com/xboxcomfd/browse`, unauthenticated, 25/page. `Filters` must be **base64 of the JSON filter map** (the `PlayWith=XboxPlayAnywhere` in the page URL returns a 500), an **MS-CV header is mandatory** but never validated, and discounts arrive as `19.999998`. |
-| Epic | Owned games only. Prices are unreachable: `store.epicgames.com/graphql` is behind Cloudflare, and the authenticated catalog service returns a list price with **no discount field anywhere**. |
+| Epic | Owned games only. Prices are unreachable: `store.epicgames.com/graphql` and the browse page are both **Cloudflare 403** to anything but a real browser, and the authenticated catalog service returns a list price with **no discount field anywhere**. ADR-0005 has the full table of what was tried. |
 | GeForce NOW | Pentanet's `cloud.gg/api/games/list/{page}/{size}` — **zero-indexed**, page 1 silently drops the first 100 games. NVIDIA's static list is not a complete catalogue and is fetched only for the Steam appids it carries. |
 
 ## Testing
