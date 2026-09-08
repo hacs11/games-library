@@ -65,7 +65,10 @@ function start(name, steps) {
 // Step count is the fallback bar; a step with its own measure (Metacritic asks
 // one appid at a time and can say how many are left) reports that instead.
 function progress(job) {
-  const [label, , measure] = job.steps[job.step] ?? job.steps[job.steps.length - 1];
+  const [name, , measure] = job.steps[job.step] ?? job.steps[job.steps.length - 1];
+  // A step that changes what it is doing — waiting out a rate limit, say —
+  // gives its label as a function rather than a string.
+  const label = typeof name === "function" ? name() : name;
   const fine = measure?.();
   return fine?.max
     ? { label, value: fine.value, max: fine.max, step: job.step + 1, steps: job.steps.length }
@@ -231,15 +234,31 @@ const routes = {
 
   "POST /ratings": (_req, res) => {
     const baseline = pendingCount(db);
+    let label = "Fetching Metacritic scores";
     start("ratings", [
-      // Metacritic writes each score as it lands, so how many are left to ask
-      // for is progress in itself — no instrumenting the fetch loop for it.
-      // fetchMetacritic asks for at most 250, so what it has got through is
-      // however far the pending count has fallen.
-      ["Fetching Metacritic scores", () => fetchMetacritic(db), () => ({
-        value: baseline - pendingCount(db),
-        max: Math.min(baseline, 250),
-      })],
+      // One press works through everything still pending. fetchMetacritic stops
+      // when Steam's ~200-per-5-minutes window is spent, so the window is
+      // waited out rather than taken for the end — but two passes in a row that
+      // get nowhere are not a rate limit, and that is the end.
+      [
+        () => label,
+        async () => {
+          for (let left = baseline, idle = 0; left > 0 && idle < 2; ) {
+            label = "Fetching Metacritic scores";
+            await fetchMetacritic(db);
+            const now = pendingCount(db);
+            idle = now < left ? 0 : idle + 1;
+            left = now;
+            if (left > 0 && idle > 0) {
+              label = "Waiting out Steam's rate limit";
+              await new Promise((r) => setTimeout(r, 5 * 60_000));
+            }
+          }
+        },
+        // Metacritic writes each score as it lands, so how far the pending
+        // count has fallen is progress in itself — no instrumenting the loop.
+        () => ({ value: baseline - pendingCount(db), max: baseline }),
+      ],
       ["Fetching IGDB critic aggregates", () => rateGames(db, criticScores)],
     ]);
     seeOther(res, "/connect");
