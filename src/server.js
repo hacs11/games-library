@@ -202,13 +202,18 @@ const routes = {
 
   "POST /connect/steam": async (req, res) => {
     const { api_key, steam_id } = await body(req);
-    saveCredential(db, "steam", { api_key: api_key.trim(), steam_id: steam_id.trim() });
+    const saved = credential(db, "steam")?.data ?? {};
+    saveCredential(db, "steam", { api_key: api_key.trim() || saved.api_key, steam_id: steam_id.trim() });
     seeOther(res, "/connect");
   },
 
   "POST /connect/igdb": async (req, res) => {
     const { client_id, client_secret } = await body(req);
-    saveCredential(db, "igdb", { client_id: client_id.trim(), client_secret: client_secret.trim() });
+    const saved = credential(db, "igdb")?.data ?? {};
+    saveCredential(db, "igdb", {
+      client_id: client_id.trim(),
+      client_secret: client_secret.trim() || saved.client_secret,
+    });
     seeOther(res, "/connect");
   },
 
@@ -263,8 +268,21 @@ const syncRoute = (path) => {
   return store && ((_req, res) => syncStore(db, store).catch(() => {}).then(() => seeOther(res, "/connect")));
 };
 
+// A form POST needs no CORS preflight, so any page the browser happens to be
+// on could aim one at localhost:3000 — and every write here is destructive
+// (hand-typed Xbox Entitlements cannot be re-synced, docs/adr/0002). Only a
+// navigation that came from this app may write. Clients that send no fetch
+// metadata at all (curl, a script) are not a browser being used against you.
+const sameOrigin = (req) => {
+  const site = req.headers["sec-fetch-site"];
+  if (site) return site === "same-origin";
+  const origin = req.headers.origin;
+  return !origin || origin === `http://${req.headers.host}`;
+};
+
 createServer((req, res) => {
   const path = new URL(req.url, "http://x").pathname;
+  if (req.method === "POST" && !sameOrigin(req)) return res.writeHead(403).end("Cross-origin POST refused");
   const handler =
     routes[`${req.method} ${path}`] || (req.method === "POST" ? syncRoute(path) : null);
   if (!handler) return res.writeHead(404).end("Not found");

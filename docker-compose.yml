@@ -6,4 +6,6 @@ services:
     environment:
       NODE_NO_WARNINGS: "1"
     ports:
-      - "3000:3000"
+      # Loopback only: the app has no login, and the Connect page holds every
+      # store credential (docs/adr/0004).
+      - "127.0.0.1:3000:3000"

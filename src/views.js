@@ -758,6 +758,13 @@ const connectCard = ({ store, label, row, counts = "", body, action }) => `
   ${body ? `<div style="padding:0 16px 14px">${body}</div>` : ""}
 </div>`;
 
+// A saved secret is never rendered back: the field comes back empty, and blank
+// on submit means "keep the one that is saved". Identifiers (SteamID, client
+// ID) are not secrets and stay visible — they are how you tell accounts apart.
+const secretField = (label, name, saved, type = "text") =>
+  `<label class="field">${label} <input class="input" name="${name}" type="${type}" value=""
+    placeholder="${saved ? "Saved — leave blank to keep" : ""}"${saved ? "" : " required"}></label>`;
+
 export const connectPage = (rows, pendingScores = 0, ratings = {}, counts = {}) => {
   const by = (s) => rows.find((r) => r.store === s);
   const data = (s) => {
@@ -778,7 +785,7 @@ ${connectCard({
   action: by("steam")?.data ? syncBtn("steam") : "",
   body: `<form method="post" action="/connect/steam">
     <p class="intro" style="margin:0 0 8px">Key from <a href="https://steamcommunity.com/dev/apikey">steamcommunity.com/dev/apikey</a>. Your profile's <em>Game details</em> must be Public or Steam returns nothing.</p>
-    <label class="field">API key <input class="input" name="api_key" value="${esc(data("steam").api_key ?? "")}" required></label>
+    ${secretField("API key", "api_key", data("steam").api_key)}
     <label class="field">SteamID <input class="input" name="steam_id" value="${esc(data("steam").steam_id ?? "")}" required></label>
     <button class="btn btn-primary" style="font-size:12px">Save</button>
   </form>`,
@@ -843,7 +850,7 @@ ${connectCard({
       pendingScores > 0 ? ` <strong>${pendingScores} Steam games have no Metacritic score yet</strong> — Steam rate limits this, so it runs in batches.` : ""
     }</p>
     <label class="field">Client ID <input class="input" name="client_id" value="${esc(data("igdb").client_id ?? "")}" required></label>
-    <label class="field">Client secret <input class="input" name="client_secret" type="password" value="${esc(data("igdb").client_secret ?? "")}" required></label>
+    ${secretField("Client secret", "client_secret", data("igdb").client_secret, "password")}
     <button class="btn btn-primary" style="font-size:12px">Save</button>
   </form>`,
 })}
