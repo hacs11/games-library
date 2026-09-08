@@ -11,6 +11,9 @@ const ICONS = {
   grid: `<path d="M104 40H56a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16V56a16 16 0 0 0-16-16Zm96 0h-48a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16V56a16 16 0 0 0-16-16Zm-96 96H56a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16v-48a16 16 0 0 0-16-16Zm96 0h-48a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h48a16 16 0 0 0 16-16v-48a16 16 0 0 0-16-16Z"/>`,
   rows: `<path d="M216 64H40a8 8 0 0 1 0-16h176a8 8 0 0 1 0 16Zm0 56H40a8 8 0 0 1 0-16h176a8 8 0 0 1 0 16Zm0 56H40a8 8 0 0 1 0-16h176a8 8 0 0 1 0 16Zm0 56H40a8 8 0 0 1 0-16h176a8 8 0 0 1 0 16Z"/>`,
   star: `<path d="M239.2 97.29a16 16 0 0 0-13.81-11L166 81.17l-23.28-55.36a15.95 15.95 0 0 0-29.44 0L90.07 81.17l-59.44 5.11a16 16 0 0 0-9.11 28.06l45.11 39.42-13.52 58.54a16 16 0 0 0 23.84 17.34l51-31 51.05 31a16 16 0 0 0 23.84-17.34l-13.53-58.6 45.1-39.36a16 16 0 0 0 4.79-17.15Z"/>`,
+  // The outline is the unstarred state: a solid star on every tile read as
+  // "already on your watchlist".
+  "star-outline": `<path d="M239.18 97.26A16.38 16.38 0 0 0 224.92 86l-59-4.76-22.78-55.09a16.36 16.36 0 0 0-30.27 0L90.11 81.23 31.08 86a16.46 16.46 0 0 0-9.37 28.86l45 38.83L53 211.75a16.38 16.38 0 0 0 24.5 17.82l50.5-31 50.53 31A16.4 16.4 0 0 0 203 211.75l-13.76-58.07 45-38.83a16.43 16.43 0 0 0 4.94-17.59Zm-15.34 5.47-48.7 42a8 8 0 0 0-2.56 7.91l14.88 62.8a.37.37 0 0 1-.17.48c-.18.14-.23.11-.38 0l-54.72-33.65a8 8 0 0 0-8.38 0l-54.72 33.65c-.15.09-.2.12-.38 0a.37.37 0 0 1-.17-.48l14.88-62.8a8 8 0 0 0-2.56-7.91l-48.7-42c-.12-.1-.23-.19-.13-.5s.18-.27.33-.29l64-5.16a8 8 0 0 0 6.72-4.88l24.62-59.6c.08-.19.11-.26.35-.26s.27.07.35.26l24.62 59.6a8 8 0 0 0 6.72 4.88l64 5.16c.15 0 .24 0 .33.29s0 .4-.13.5Z"/>`,
   x: `<path d="m205.66 194.34-8 8a8 8 0 0 1-11.32 0L128 144.4l-58.34 57.94a8 8 0 0 1-11.32-11.32L116.28 133 58.34 74.66a8 8 0 0 1 11.32-11.32L128 121.6l58.34-57.94a8 8 0 0 1 11.32 11.32L139.72 133l57.94 58.34a8 8 0 0 1 0 3Z"/>`,
 };
 
@@ -191,6 +194,14 @@ export const layout = (title, body, { path = "/", pending = 0, panel = "" } = {}
   textarea.input { width: 100%; min-height: 9rem; font: inherit; }
   .stale { border-radius: 8px; padding: 10px 14px; margin-bottom: 18px; font-size: 13px; background: var(--color-accent-900); color: var(--color-accent-200); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   form.inline { display: inline; }
+
+  /* Opening a panel is a full navigation. Chrome holds the new document's
+     first paint until the transition is ready, so the list no longer paints at
+     the top and jumps once the scroll is restored — it cross-fades in place. */
+  @view-transition { navigation: auto; }
+  @media (prefers-reduced-motion: reduce) {
+    ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+  }
   @media (max-width: 640px) { .table-wrap { overflow-x: auto; } }
 </style>
 <header class="header">
@@ -211,6 +222,25 @@ ${panel}
   });
   const panel = document.querySelector(".panel");
   if (panel) (panel.querySelector("[data-close]") ?? panel).focus?.();
+
+  // Opening or closing a panel is a real navigation, so the list would come
+  // back at the top. Park the scroll position under the URL being navigated to
+  // and put it back on arrival there — only for the links that mean "same list,
+  // panel toggled", so applying a filter still starts at the top.
+  addEventListener("click", (e) => {
+    const link = e.target.closest?.("a[data-keep-scroll]");
+    if (link) sessionStorage.setItem(link.href, scrollY);
+  });
+  // Starring is a POST that 303s to its own back URL, which is that same list.
+  addEventListener("submit", (e) => {
+    const back = e.target.elements.back;
+    if (back) sessionStorage.setItem(new URL(back.value, location).href, scrollY);
+  });
+  const parked = sessionStorage.getItem(location.href);
+  if (parked !== null) {
+    sessionStorage.removeItem(location.href);
+    scrollTo(0, +parked);
+  }
 </script>
 `;
 
@@ -319,7 +349,7 @@ ${
 const gridView = (games, filters, view) => `<div class="grid">
 ${games
   .map(
-    (g) => `<a class="tile" href="/${qs(filters, { view, game: g.id })}">
+    (g) => `<a class="tile" data-keep-scroll href="/${qs(filters, { view, game: g.id })}">
   ${coverArt(g)}
     ${g.streamable ? `<span class="gfn-badge" title="Confirmed on GeForce NOW">${icon("lightning", 9)}GFN</span>` : ""}
     ${g.rating != null ? `<span class="score-badge" title="${esc(scoreTitle(g))}">${g.rating}</span>` : ""}
@@ -338,7 +368,7 @@ const rowsView = (games, filters, view) => `<div class="table-wrap"><table class
 ${games
   .map(
     (g) => `  <tr>
-    <td style="padding:9px 8px"><a class="row-link" href="/${qs(filters, { view, game: g.id })}">
+    <td style="padding:9px 8px"><a class="row-link" data-keep-scroll href="/${qs(filters, { view, game: g.id })}">
       <span class="thumb">${g.cover_url ? `<img src="${esc(g.cover_url)}" alt="" loading="lazy">` : `<span>${esc(initials(g.title))}</span>`}</span>
       <span style="font-size:14px">${esc(g.title)}</span>
       ${g.streamable ? `<span style="color:#a3d95a" title="Confirmed on GeForce NOW">${icon("lightning", 13)}</span>` : ""}
@@ -359,9 +389,9 @@ export const detailPanel = (game, closeHref) => {
   const streamable = game.entitlements.filter((e) => e.gfn_status === "AVAILABLE");
   const meta = [game.year, game.rating != null ? `${game.rating} score` : "No score", hours(game.playtime_minutes)];
   return `
-<a class="scrim" href="${esc(closeHref)}" aria-label="Close"></a>
+<a class="scrim" data-keep-scroll href="${esc(closeHref)}" aria-label="Close"></a>
 <aside class="panel" role="dialog" aria-modal="true" aria-label="${esc(game.title)}">
-  <div class="panel-close"><a class="btn btn-secondary btn-icon" data-close href="${esc(closeHref)}" aria-label="Close">${icon("x", 15)}</a></div>
+  <div class="panel-close"><a class="btn btn-secondary btn-icon" data-close data-keep-scroll href="${esc(closeHref)}" aria-label="Close">${icon("x", 15)}</a></div>
   <div class="cover" style="width:132px">${
     game.cover_url
       ? `<img src="${esc(game.cover_url)}" alt="">`
@@ -491,7 +521,7 @@ const starForm = (item, back, attrs = "") => `<form class="inline" method="post"
   <input type="hidden" name="back" value="${esc(back)}">
   <button class="btn btn-secondary btn-icon" style="padding:5px;${item.watched ? "color:var(--color-accent);border-color:var(--color-accent)" : ""}"
     title="${item.watched ? "In your watchlist — click to remove" : "Add to watchlist"}"
-    aria-label="${item.watched ? "Remove from watchlist" : "Add to watchlist"}">${icon("star", 14)}</button>
+    aria-label="${item.watched ? "Remove from watchlist" : "Add to watchlist"}">${icon(item.watched ? "star" : "star-outline", 14)}</button>
 </form>`;
 
 // The Stores whose own catalogue we can read a price out of.
@@ -528,7 +558,7 @@ ${title("Discover", {
   <a class="gfn-toggle${filters.sale ? " on" : ""}" href="/discover${qs({ ...filters, sale: !filters.sale })}"
      style="${filters.sale ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">On sale only</a>
   <a class="gfn-toggle${filters.watch ? " on" : ""}" href="/discover${qs({ ...filters, watch: !filters.watch })}"
-     style="${filters.watch ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">${icon("star", 12)} Watchlist${watching ? ` (${watching})` : ""}</a>
+     style="${filters.watch ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">${icon(filters.watch ? "star" : "star-outline", 12)} Watchlist${watching ? ` (${watching})` : ""}</a>
 </form>
 <hr class="rule-fade" style="margin-bottom:22px">
 ${
@@ -544,7 +574,7 @@ ${games.map((g) => discoverTile(g, filters)).join("\n")}
 // earning, and the discount takes the score's corner.
 const discoverTile = (g, filters) => `<div class="tile-wrap">
 ${starForm(g, `/discover${qs(filters)}`, ` style="position:absolute;top:7px;left:7px;z-index:1"`)}
-<a class="tile" href="/discover${qs({ ...filters, title: g.norm_title })}">
+<a class="tile" data-keep-scroll href="/discover${qs({ ...filters, title: g.norm_title })}">
   ${coverArt(g)}
     <span class="gfn-badge" title="In the GeForce NOW catalogue">${icon("lightning", 9)}GFN</span>
     ${g.best_discount > 0 ? `<span class="deal-badge" title="Best discount across the stores selling it">−${g.best_discount}%</span>` : ""}
@@ -572,9 +602,9 @@ export const discoverPanel = (item, closeHref) => {
   if (!item) return "";
   const cheapest = [...item.prices].sort((a, b) => (a.formatted ?? "").length - (b.formatted ?? "").length);
   return `
-<a class="scrim" href="${esc(closeHref)}" aria-label="Close"></a>
+<a class="scrim" data-keep-scroll href="${esc(closeHref)}" aria-label="Close"></a>
 <aside class="panel" role="dialog" aria-modal="true" aria-label="${esc(item.title)}">
-  <div class="panel-close"><a class="btn btn-secondary btn-icon" data-close href="${esc(closeHref)}" aria-label="Close">${icon("x", 15)}</a></div>
+  <div class="panel-close"><a class="btn btn-secondary btn-icon" data-close data-keep-scroll href="${esc(closeHref)}" aria-label="Close">${icon("x", 15)}</a></div>
   <div class="cover" style="width:132px">${
     item.cover_url
       ? `<img src="${esc(item.cover_url)}" alt="">`
