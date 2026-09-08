@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { open, listGames, staleSources } from "./db.js";
+import { open, listGames, staleSources, replaceAll } from "./db.js";
 
 test("listGames groups Entitlements into one row per Game", () => {
   const db = open(":memory:");
@@ -51,4 +51,27 @@ test("a source that has never synced counts as stale", () => {
   const db = open(":memory:");
   db.exec("INSERT INTO store_credential (store, status) VALUES ('gfn', 'connected')");
   assert.deepEqual(staleSources(db).map((s) => s.store), ["gfn"]);
+});
+
+// Every catalogue sweep deletes its table and rebuilds it. Half a rebuild is
+// worse than no rebuild: Discover would lose every price, score and badge.
+test("a sweep that dies halfway leaves the table it was replacing untouched", () => {
+  const db = open(":memory:");
+  db.exec("INSERT INTO steam_app (norm_title, appid) VALUES ('portal 2', '620')");
+
+  assert.throws(() =>
+    replaceAll(db, () => {
+      db.exec("DELETE FROM steam_app");
+      db.exec("INSERT INTO steam_app (norm_title, appid) VALUES ('half life', '70')");
+      throw new Error("Steam app list returned 500");
+    }),
+  );
+
+  assert.deepEqual(
+    db.prepare("SELECT norm_title, appid FROM steam_app").all().map((r) => [r.norm_title, r.appid]),
+    [["portal 2", "620"]],
+  );
+  // ...and the connection is usable afterwards, not stuck in a transaction.
+  replaceAll(db, () => db.exec("DELETE FROM steam_app"));
+  assert.equal(db.prepare("SELECT count(*) c FROM steam_app").get().c, 0);
 });

@@ -1,4 +1,5 @@
 import { normaliseTitle } from "./match.js";
+import { replaceAll } from "./db.js";
 const OWNED = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/";
 
 // Steam returns an empty `response` object — not an error — when the account's
@@ -100,14 +101,19 @@ export async function syncAppIds(db, credentials) {
     last = response.last_appid;
   }
 
-  db.exec("DELETE FROM steam_app");
   const insert = db.prepare("INSERT OR REPLACE INTO steam_app (norm_title, appid) VALUES (?, ?)");
-  let stored = 0;
-  for (const [key, appid] of byName) {
-    if (ambiguous.has(key)) continue;
-    insert.run(key, appid);
-    stored++;
-  }
+  // One transaction: the whole of Steam is deleted and re-inserted here, and a
+  // Discover page rendered in the middle would find no prices and no scores.
+  const stored = replaceAll(db, () => {
+    db.exec("DELETE FROM steam_app");
+    let n = 0;
+    for (const [key, appid] of byName) {
+      if (ambiguous.has(key)) continue;
+      insert.run(key, appid);
+      n++;
+    }
+    return n;
+  });
   return { apps: byName.size, ambiguous: ambiguous.size, stored };
 }
 

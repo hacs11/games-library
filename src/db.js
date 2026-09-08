@@ -212,6 +212,24 @@ export function listGames(db, { q = "", store = "", gfn = false, all = false, ge
     }));
 }
 
+// A sweep that replaces a table wholesale must not be visible half-done. The
+// fetch is already collected in memory first, but the DELETE and the inserts
+// that follow it are separate statements: a page rendered between them sees an
+// empty catalogue and loses every price, score and badge it had. One
+// transaction makes the swap atomic to anyone reading through it. IMMEDIATE
+// takes the write lock up front rather than discovering it mid-sweep.
+export function replaceAll(db, write) {
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    const result = write();
+    db.exec("COMMIT");
+    return result;
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
 export function credential(db, store) {
   const row = db.prepare("SELECT * FROM store_credential WHERE store = ?").get(store);
   return row ? { ...row, data: row.data ? JSON.parse(row.data) : null } : null;

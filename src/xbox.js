@@ -1,4 +1,5 @@
 import { normaliseTitle } from "./match.js";
+import { replaceAll } from "./db.js";
 
 // Xbox has no reachable "what do I own" endpoint, so its Entitlements are typed
 // in by hand (docs/adr/0002). There is no Sync to correct a mistake with, which
@@ -111,27 +112,33 @@ export async function syncCatalogue(db, { pages = 200 } = {}) {
        VALUES ('xbox', ?, ?, ?, ?, ?, ?, ?)`,
   );
 
-  db.exec("DELETE FROM xbox_app");
-  db.exec("DELETE FROM catalogue_price WHERE store = 'xbox'");
+  // The swap is one transaction: a page rendered between the DELETE and the
+  // last insert would otherwise find no XBOX prices at all.
+  const [stored, priced] = replaceAll(db, () => {
+    db.exec("DELETE FROM xbox_app");
+    db.exec("DELETE FROM catalogue_price WHERE store = 'xbox'");
 
-  let stored = 0;
-  let priced = 0;
-  for (const [key, { id, price }] of byName) {
-    if (ambiguous.has(key)) continue;
-    app.run(key, id);
-    stored++;
-    const final = cents(price?.listPrice);
-    save.run(
-      id,
-      price?.currency ?? null,
-      final,
-      cents(price?.msrp),
-      // The service returns 19.999998 for a fifth off.
-      price?.discountPercentage > 0 ? Math.round(price.discountPercentage) : null,
-      final == null ? null : `A$${price.listPrice.toFixed(2)}`,
-      now,
-    );
-    if (final != null) priced++;
-  }
+    let stored = 0;
+    let priced = 0;
+    for (const [key, { id, price }] of byName) {
+      if (ambiguous.has(key)) continue;
+      app.run(key, id);
+      stored++;
+      const final = cents(price?.listPrice);
+      save.run(
+        id,
+        price?.currency ?? null,
+        final,
+        cents(price?.msrp),
+        // The service returns 19.999998 for a fifth off.
+        price?.discountPercentage > 0 ? Math.round(price.discountPercentage) : null,
+        final == null ? null : `A$${price.listPrice.toFixed(2)}`,
+        now,
+      );
+      if (final != null) priced++;
+    }
+    return [stored, priced];
+  });
+
   return { products: byName.size, ambiguous: ambiguous.size, stored, priced };
 }

@@ -1,4 +1,5 @@
 import { normaliseTitle } from "./match.js";
+import { replaceAll } from "./db.js";
 
 // Pentanet's own catalogue for the Australian GeForce NOW alliance region.
 // NVIDIA's static "supported-public-game-list" file was used first and is
@@ -35,7 +36,6 @@ export async function syncGfn(db) {
 
   // Only replace the catalogue once the whole thing is in hand: a fetch that
   // dies halfway must not leave a truncated list behind.
-  db.exec("DELETE FROM gfn_entry");
   const insert = db.prepare(
     `INSERT INTO gfn_entry (gfn_id, title, norm_title, store, steam_appid, status, image_url, genres)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -43,20 +43,27 @@ export async function syncGfn(db) {
   // Pentanet's genres are SCREAMING_SNAKE; store them the way they will be read.
   const readable = (g) =>
     (g ?? []).map((x) => x.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())).join(", ");
-  let rows = 0;
-  for (const g of games) {
-    // One row per variant: support is per store, so a game streamable from GOG
-    // but not Epic is two different answers.
-    // Some catalogue titles arrive with leading or trailing whitespace.
-    const title = g.title.trim();
-    for (const v of g.variants ?? []) {
-      insert.run(
-        v.id ?? null, title, normaliseTitle(title), v.appStore ?? null, null, "AVAILABLE",
-        g.images?.KEY_ART ?? null, readable(g.genres) || null,
-      );
-      rows++;
+  // The catalogue is swapped in one transaction: without it, every page
+  // rendered between the DELETE and the last insert sees an empty Discover.
+  // The NVIDIA appid rows below only ever add, so they stay outside it.
+  const rows = replaceAll(db, () => {
+    db.exec("DELETE FROM gfn_entry");
+    let n = 0;
+    for (const g of games) {
+      // One row per variant: support is per store, so a game streamable from GOG
+      // but not Epic is two different answers.
+      // Some catalogue titles arrive with leading or trailing whitespace.
+      const title = g.title.trim();
+      for (const v of g.variants ?? []) {
+        insert.run(
+          v.id ?? null, title, normaliseTitle(title), v.appStore ?? null, null, "AVAILABLE",
+          g.images?.KEY_ART ?? null, readable(g.genres) || null,
+        );
+        n++;
+      }
     }
-  }
+    return n;
+  });
 
   let appids = 0;
   try {

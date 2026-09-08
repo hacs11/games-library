@@ -1,4 +1,4 @@
-import { saveCredential } from "./db.js";
+import { saveCredential, replaceAll } from "./db.js";
 import { normaliseTitle } from "./match.js";
 
 // GOG Galaxy's own OAuth client. Publicly known and used by every third-party
@@ -123,26 +123,32 @@ export async function syncCatalogue(db, { pages = 100 } = {}) {
        VALUES ('gog', ?, ?, ?, ?, ?, ?, ?)`,
   );
 
-  db.exec("DELETE FROM gog_app");
-  db.exec("DELETE FROM catalogue_price WHERE store = 'gog'");
+  // The swap is one transaction: a page rendered between the DELETE and the
+  // last insert would otherwise find no GOG prices at all.
+  const [stored, priced] = replaceAll(db, () => {
+    db.exec("DELETE FROM gog_app");
+    db.exec("DELETE FROM catalogue_price WHERE store = 'gog'");
 
-  let stored = 0;
-  let priced = 0;
-  for (const [key, { id, price }] of byName) {
-    if (ambiguous.has(key)) continue;
-    app.run(key, id);
-    stored++;
-    const final = cents(price?.finalMoney?.amount);
-    save.run(
-      id,
-      price?.finalMoney?.currency ?? null,
-      final,
-      cents(price?.baseMoney?.amount),
-      percent(price?.discount),
-      price?.final ? `A${price.final}` : null,
-      now,
-    );
-    if (final != null) priced++;
-  }
+    let stored = 0;
+    let priced = 0;
+    for (const [key, { id, price }] of byName) {
+      if (ambiguous.has(key)) continue;
+      app.run(key, id);
+      stored++;
+      const final = cents(price?.finalMoney?.amount);
+      save.run(
+        id,
+        price?.finalMoney?.currency ?? null,
+        final,
+        cents(price?.baseMoney?.amount),
+        percent(price?.discount),
+        price?.final ? `A${price.final}` : null,
+        now,
+      );
+      if (final != null) priced++;
+    }
+    return [stored, priced];
+  });
+
   return { products: byName.size, ambiguous: ambiguous.size, stored, priced };
 }
