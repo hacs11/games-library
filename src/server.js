@@ -19,7 +19,10 @@ import {
 } from "./views.js";
 
 const STORE_OAUTH = { gog, epic };
-const db = open();
+// The database is opened on import, so a test must be able to ask for one that
+// is not the real file — writing to data/library.db from outside the container
+// corrupts the running container's view of it.
+const db = open(process.env.LIBRARY_DB ?? "data/library.db");
 
 const html = (res, body) =>
   res.writeHead(200, { "content-type": "text/html; charset=utf-8" }).end(body);
@@ -330,14 +333,19 @@ const sameOrigin = (req) => {
   return !origin || origin === `http://${req.headers.host}`;
 };
 
-createServer((req, res) => {
+// Exported so the routing rules — the CSRF guard above especially — can be
+// exercised without a socket. Importing this module still opens the database
+// and builds the route table; only listening is conditional.
+export function handle(req, res) {
   const path = new URL(req.url, "http://x").pathname;
   if (req.method === "POST" && !sameOrigin(req)) return res.writeHead(403).end("Cross-origin POST refused");
   const handler =
     routes[`${req.method} ${path}`] || (req.method === "POST" ? syncRoute(path) : null);
   if (!handler) return res.writeHead(404).end("Not found");
-  Promise.resolve(handler(req, res)).catch((err) => {
+  return Promise.resolve(handler(req, res)).catch((err) => {
     console.error(err);
     if (!res.headersSent) res.writeHead(500).end("Server error");
   });
-}).listen(3000, () => console.log("http://localhost:3000"));
+}
+
+if (import.meta.main) createServer(handle).listen(3000, () => console.log("http://localhost:3000"));
