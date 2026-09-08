@@ -1,15 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { open, saveCredential, discoverGames, discoverCount, toggleWatch, watchCount } from "./db.js";
+import { open, saveCredential, discoverGames, discoverCount, toggleWatch, watchCount, genreList } from "./db.js";
 import { syncGfn } from "./gfn.js";
 import { syncStore } from "./sync.js";
 import { matchEntitlements } from "./match.js";
 
 const CLOUDGG = [
-  { title: "Baldur's Gate 3", variants: [{ id: "1", appStore: "STEAM" }, { id: "2", appStore: "GOG" }] },
+  { title: "Baldur's Gate 3", genres: ["ROLE_PLAYING"], variants: [{ id: "1", appStore: "STEAM" }, { id: "2", appStore: "GOG" }] },
   { title: "  Colony Survival  ", variants: [{ id: "3", appStore: "STEAM" }] },
   { title: "Halo Infinite", variants: [{ id: "4", appStore: "XBOX" }, { id: "5", appStore: "STEAM" }] },
-  { title: "Portal 2", variants: [{ id: "6", appStore: "STEAM" }] },
+  { title: "Portal 2", genres: ["PUZZLE"], variants: [{ id: "6", appStore: "STEAM" }] },
   { title: "Some Console Thing", variants: [{ id: "7", appStore: "NONE" }] },
 ];
 const NVIDIA = [
@@ -100,4 +100,14 @@ test("starring a title is a toggle, and the watchlist filter shows only what is 
 
   assert.equal(toggleWatch(db, "kept"), false, "second press removes");
   assert.deepEqual(discoverGames(db, { watch: true }), []);
+});
+
+test("the genre filter narrows Discover the way it narrows the Library", async () => {
+  const db = await library();
+  assert.deepEqual(
+    discoverGames(db, { genre: "Role Playing" }).map((g) => g.title),
+    ["Baldur's Gate 3"],
+  );
+  assert.ok(genreList(db, "gfn_entry").includes("Role Playing"));
+  assert.equal(genreList(db).length, 0);
 });

@@ -102,13 +102,14 @@ const routes = {
       sale: p.get("sale") === "1",
       watch: p.get("watch") === "1",
       sort: p.get("sort") ?? "",
+      genre: p.get("genre") ?? "",
     };
     // Same shape as the Library panel: its own URL, so it is linkable and the
     // back button closes it.
     const selected = p.get("title") ? discoverDetail(db, p.get("title")) : null;
     html(
       res,
-      page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters), watchCount(db)), "/discover", {
+      page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters), watchCount(db), genreList(db, "gfn_entry")), "/discover", {
         panel: discoverPanel(selected, `/discover${queryString(filters)}`),
       }),
     );

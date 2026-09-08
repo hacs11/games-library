@@ -497,7 +497,7 @@ const starForm = (item, back, attrs = "") => `<form class="inline" method="post"
 // The Stores whose own catalogue we can read a price out of.
 const PRICE_STORES = ["steam", "gog", "xbox"];
 
-export const discoverPage = (games, filters = {}, total = 0, watching = 0) => `
+export const discoverPage = (games, filters = {}, total = 0, watching = 0, genres = []) => `
 ${title("Discover", {
   count: `${total} titles`,
   intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's, GOG's and Xbox's, in AUD.",
@@ -515,6 +515,10 @@ ${title("Discover", {
           `<option value="${v}"${filters.store === v ? " selected" : ""}>${esc(STORE_NAMES[k] ?? k)}</option>`,
       )
       .join("")}
+  </select>
+  <select class="input" name="genre" style="min-width:140px">
+    <option value="">All genres</option>
+    ${genres.map((g) => `<option value="${esc(g)}"${filters.genre === g ? " selected" : ""}>${esc(g)}</option>`).join("")}
   </select>
   <select class="input" name="sort" style="min-width:150px">
     <option value="">A–Z</option>

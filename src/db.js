@@ -249,7 +249,7 @@ export function unmatched(db, afterId = 0) {
 // GeForce NOW games you do not own, and where you could buy them. The NVIDIA
 // appid rows are excluded: they are a Steam-only supplement to the same
 // catalogue and would double every Steam entry.
-export function discoverGames(db, { q = "", store = "", sale = false, watch = false, sort = "" } = {}, limit = 200) {
+export function discoverGames(db, { q = "", store = "", sale = false, watch = false, sort = "", genre = "" } = {}, limit = 200) {
   return db
     .prepare(
       `SELECT g.norm_title,
@@ -269,12 +269,13 @@ export function discoverGames(db, { q = "", store = "", sale = false, watch = fa
           AND (:q = '' OR g.title LIKE '%' || :q || '%')
           AND (:store = '' OR EXISTS (SELECT 1 FROM gfn_entry s WHERE s.norm_title = g.norm_title AND s.store = :store))
           AND (:watch = 0 OR g.norm_title IN (SELECT norm_title FROM watchlist))
+          AND (:genre = '' OR EXISTS (SELECT 1 FROM gfn_entry n WHERE n.norm_title = g.norm_title AND n.genres LIKE '%' || :genre || '%'))
         GROUP BY g.norm_title
        HAVING (:sale = 0 OR best_discount > 0)
         ORDER BY ${sort === "discount" ? "best_discount IS NULL, best_discount DESC," : ""} min(g.title) COLLATE NOCASE
         ${limit > 0 ? `LIMIT ${limit}` : ""}`,
     )
-    .all({ q, store, sale: sale ? 1 : 0, watch: watch ? 1 : 0 })
+    .all({ q, store, sale: sale ? 1 : 0, watch: watch ? 1 : 0, genre })
     .map(withPrices);
 }
 
@@ -391,9 +392,9 @@ export function staleSources(db, now = Date.now()) {
 }
 
 // Genres arrive as comma-separated lists; the filter needs them split out.
-export function genreList(db) {
+export function genreList(db, table = "game") {
   const seen = new Set();
-  for (const r of db.prepare("SELECT genres FROM game WHERE genres IS NOT NULL").all()) {
+  for (const r of db.prepare(`SELECT genres FROM ${table === "gfn_entry" ? "gfn_entry" : "game"} WHERE genres IS NOT NULL`).all()) {
     for (const g of r.genres.split(",")) seen.add(g.trim());
   }
   return [...seen].filter(Boolean).sort();
