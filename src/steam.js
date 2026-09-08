@@ -27,15 +27,7 @@ const APPDETAILS = "https://store.steampowered.com/api/appdetails";
 // requests per 5 minutes, so appids are fetched once and remembered — misses
 // included, since a game without a Metacritic score will not grow one.
 export async function fetchMetacritic(db, { limit = 250, delay = 1600 } = {}) {
-  const pending = db
-    .prepare(
-      `SELECT DISTINCT e.store_game_id AS appid
-         FROM entitlement e
-        WHERE e.store = 'steam'
-          AND e.store_game_id NOT IN (SELECT appid FROM steam_rating)
-        LIMIT ?`,
-    )
-    .all(limit);
+  const pending = db.prepare(`${PENDING} ORDER BY pri LIMIT ?`).all(limit);
 
   const remember = db.prepare(
     "INSERT OR REPLACE INTO steam_rating (appid, score, url, fetched_at) VALUES (?, ?, ?, ?)",
@@ -62,11 +54,25 @@ export async function fetchMetacritic(db, { limit = 250, delay = 1600 } = {}) {
   return { asked: pending.length, found, remaining: pendingCount(db) };
 }
 
+// What still needs a score: the Steam Entitlements you own, then the Steam
+// titles in the Discover catalogue. Scoped through gfn_entry the way pricing
+// is — steam_app holds the whole of Steam, which is a hundred thousand appids
+// nobody will ever look at. Owned appids sort first (pri 0): one request each
+// at ~1.6s, so the Library's own scores must not queue behind the catalogue's.
+// ponytail: one appid per request is Steam's own limit; a batched endpoint for
+// metacritic would replace this whole sweep if one ever appears.
+const PENDING = `SELECT appid, min(pri) AS pri FROM (
+         SELECT store_game_id AS appid, 0 AS pri FROM entitlement WHERE store = 'steam'
+          UNION ALL
+         SELECT a.appid, 1 FROM gfn_entry g
+           JOIN steam_app a ON a.norm_title = g.norm_title
+          WHERE g.store = 'STEAM'
+       )
+       WHERE appid NOT IN (SELECT appid FROM steam_rating)
+       GROUP BY appid`;
+
 export const pendingCount = (db) =>
-  db.prepare(
-    `SELECT count(DISTINCT store_game_id) c FROM entitlement
-      WHERE store = 'steam' AND store_game_id NOT IN (SELECT appid FROM steam_rating)`,
-  ).get().c;
+  db.prepare(`SELECT count(*) c FROM (${PENDING})`).get().c;
 
 // Steam's catalogue, used to turn a GeForce NOW title into an appid so it can
 // be priced. Needs the API key. A title claimed by more than one app is

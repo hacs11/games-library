@@ -571,12 +571,13 @@ ${games.map((g) => discoverTile(g, filters)).join("\n")}
 
 // The Library's tile, with what Discover knows instead of what ownership knows:
 // every one of these streams, so GFN is a given rather than a badge worth
-// earning, and the discount takes the score's corner.
+// earning, the discount takes the score's corner, and the score moves left.
 const discoverTile = (g, filters) => `<div class="tile-wrap">
 ${starForm(g, `/discover${qs(filters)}`, ` style="position:absolute;top:7px;left:7px;z-index:1"`)}
 <a class="tile" data-keep-scroll href="/discover${qs({ ...filters, title: g.norm_title })}">
   ${coverArt(g)}
     <span class="gfn-badge" title="In the GeForce NOW catalogue">${icon("lightning", 9)}GFN</span>
+    ${g.rating != null ? `<span class="score-badge" style="right:auto;left:7px" title="Metacritic ${g.rating}">${g.rating}</span>` : ""}
     ${g.best_discount > 0 ? `<span class="deal-badge" title="Best discount across the stores selling it">−${g.best_discount}%</span>` : ""}
   </div>
   <span class="tile-title">${esc(g.title)}</span>
@@ -611,7 +612,11 @@ export const discoverPanel = (item, closeHref) => {
       : `<span class="cover-mono" style="font-size:26px">${esc(initials(item.title))}</span>`
   }</div>
   <h3>${esc(item.title)}</h3>
-  <div class="panel-meta">Not owned${item.best_discount > 0 ? ` · on sale, up to −${item.best_discount}%` : ""}</div>
+  <div class="panel-meta">Not owned${
+    item.rating != null
+      ? ` · ${item.rating_url ? `<a href="${esc(item.rating_url)}" target="_blank" rel="noopener">${item.rating} Metacritic</a>` : `${item.rating} Metacritic`}`
+      : ""
+  }${item.best_discount > 0 ? ` · on sale, up to −${item.best_discount}%` : ""}</div>
   <div class="panel-tags">${(item.genres ?? "")
     .split(", ")
     .filter(Boolean)
@@ -847,7 +852,7 @@ ${connectCard({
   }</button></form>`,
   body: `<form method="post" action="/connect/igdb">
     <p class="intro" style="margin:0 0 8px">IGDB identifies games across stores and supplies art, genres and years. Register at <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener">dev.twitch.tv/console/apps</a>.${
-      pendingScores > 0 ? ` <strong>${pendingScores} Steam games have no Metacritic score yet</strong> — Steam rate limits this, so it runs in batches.` : ""
+      pendingScores > 0 ? ` <strong>${pendingScores} Steam titles have no Metacritic score yet</strong> (yours first, then Discover's) — Steam rate limits this, so it runs in batches.` : ""
     }</p>
     <label class="field">Client ID <input class="input" name="client_id" value="${esc(data("igdb").client_id ?? "")}" required></label>
     ${secretField("Client secret", "client_secret", data("igdb").client_secret, "password")}

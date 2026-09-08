@@ -258,9 +258,11 @@ export function discoverGames(db, { q = "", store = "", sale = false, watch = fa
               max(g.genres) AS genres,
               group_concat(DISTINCT g.store) AS stores,
               EXISTS (SELECT 1 FROM watchlist w WHERE w.norm_title = g.norm_title) AS watched,
-              ${PRICE_COLUMNS}
+              ${PRICE_COLUMNS},
+              ${RATING_COLUMNS}
          FROM gfn_entry g
          ${PRICE_JOINS}
+         ${RATING_JOIN}
         WHERE g.steam_appid IS NULL
           AND g.store IS NOT NULL
           AND g.store NOT IN ('NONE', 'UNKNOWN')
@@ -307,6 +309,16 @@ const PRICE_JOINS = `LEFT JOIN steam_app a ON a.norm_title = g.norm_title AND ${
          LEFT JOIN catalogue_price gp ON gp.store = 'gog' AND gp.store_id = ga.product_id
          LEFT JOIN xbox_app xa ON xa.norm_title = g.norm_title AND ${sells("XBOX")}
          LEFT JOIN catalogue_price xp ON xp.store = 'xbox' AND xp.store_id = xa.product_id`;
+
+// Metacritic's score for the Steam listing, reused for the catalogue. Unlike a
+// price this is NOT gated by sells(): a review score is a property of the Game,
+// not of the Store you would buy it from, so the Steam score stands even for a
+// title GeForce NOW lists under GOG alone. Contrast PRICE_JOINS above.
+const RATING_COLUMNS = `max(r.score) AS rating,
+              max(r.url) AS rating_url`;
+
+const RATING_JOIN = `LEFT JOIN steam_app ra ON ra.norm_title = g.norm_title
+         LEFT JOIN steam_rating r ON r.appid = ra.appid`;
 
 function withPrices(r) {
   const prices = [
@@ -365,9 +377,11 @@ export function discoverDetail(db, normTitle) {
               max(g.genres) AS genres,
               group_concat(DISTINCT g.store) AS stores,
               EXISTS (SELECT 1 FROM watchlist w WHERE w.norm_title = g.norm_title) AS watched,
-              ${PRICE_COLUMNS}
+              ${PRICE_COLUMNS},
+              ${RATING_COLUMNS}
          FROM gfn_entry g
          ${PRICE_JOINS}
+         ${RATING_JOIN}
         WHERE g.norm_title = ?
         GROUP BY g.norm_title`,
     )

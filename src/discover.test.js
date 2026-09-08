@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { open, saveCredential, discoverGames, discoverCount, toggleWatch, watchCount, genreList } from "./db.js";
 import { syncGfn } from "./gfn.js";
+import { fetchMetacritic, pendingCount } from "./steam.js";
 import { syncStore } from "./sync.js";
 import { matchEntitlements } from "./match.js";
 
@@ -110,4 +111,40 @@ test("the genre filter narrows Discover the way it narrows the Library", async (
   );
   assert.ok(genreList(db, "gfn_entry").includes("Role Playing"));
   assert.equal(genreList(db).length, 0);
+});
+
+// A score is a property of the Game, not of the Store selling it — the opposite
+// of a price, which docs/adr/0003 ties to the Store GeForce NOW lists.
+test("a Metacritic score shows on Discover even for a store GeForce NOW does not list the title under", async () => {
+  const db = await library();
+  db.exec(`INSERT INTO steam_app (norm_title, appid) VALUES ('baldur s gate 3', '1086940')`);
+  db.exec(`INSERT INTO steam_rating (appid, score, url, fetched_at)
+             VALUES ('1086940', 96, 'https://metacritic.test/bg3', '2026-01-01')`);
+  // GeForce NOW lists this one under GOG as well as Steam; the price rules
+  // would gate on that, the score does not.
+  db.exec(`UPDATE gfn_entry SET store = 'GOG' WHERE norm_title = 'baldur s gate 3'`);
+
+  const [bg3] = discoverGames(db, { q: "Baldur" });
+  assert.equal(bg3.rating, 96);
+  assert.equal(bg3.rating_url, "https://metacritic.test/bg3");
+  assert.equal(discoverGames(db, { q: "Portal" })[0]?.rating ?? null, null);
+});
+
+test("the score sweep asks for owned appids before the catalogue's", async () => {
+  const db = await library();
+  db.exec(`INSERT INTO steam_app (norm_title, appid) VALUES ('colony survival', '9999')`);
+  // 620 is owned; 9999 is only in the Discover catalogue.
+  assert.equal(pendingCount(db), 2);
+  const asked = [];
+  const restore = stub(async (url) => {
+    asked.push(new URL(String(url)).searchParams.get("appids"));
+    return Response.json({});
+  });
+  try {
+    await fetchMetacritic(db, { delay: 0 });
+  } finally {
+    restore();
+  }
+  assert.deepEqual(asked, ["620", "9999"]);
+  assert.equal(pendingCount(db), 0);
 });
