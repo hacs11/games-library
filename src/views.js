@@ -139,6 +139,14 @@ export const layout = (title, body, { path = "/", pending = 0, panel = "" } = {}
     background: color-mix(in srgb, var(--color-bg) 78%, transparent);
     color: var(--color-neutral-300); box-shadow: inset 0 0 0 1px var(--color-neutral-800);
   }
+  /* Discover tiles are Library tiles with a star over the cover and a discount
+     where the score sits. */
+  .tile-wrap { position: relative; }
+  .deal-badge {
+    position: absolute; bottom: 7px; right: 7px; padding: 2px 6px; border-radius: 6px;
+    font-size: 10px; font-variant-numeric: tabular-nums;
+    background: var(--color-accent-800); color: var(--color-accent-100);
+  }
   .tile-title { font-size: 13px; line-height: 1.3; text-wrap: pretty; }
   .tile-genres { font-size: 11px; color: color-mix(in srgb, var(--color-text) 45%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .pills { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -492,7 +500,7 @@ const PRICE_STORES = ["steam", "gog", "xbox"];
 export const discoverPage = (games, filters = {}, total = 0, watching = 0) => `
 ${title("Discover", {
   count: `${total} titles`,
-  intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's and GOG's, in AUD.",
+  intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's, GOG's and Xbox's, in AUD.",
 })}
 <form class="filters" method="get" action="/discover">
   <span class="search-wrap">
@@ -522,32 +530,28 @@ ${title("Discover", {
 ${
   games.length === 0
     ? `<p class="empty">No titles match those filters.</p>`
-    : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">
-${games
-  .map(
-    (g) => `<div style="position:relative">
-${starForm(g, `/discover${qs(filters)}`, ` style="position:absolute;top:8px;right:8px;z-index:1"`)}
-<a class="card elev-sm" href="/discover${qs({ ...filters, title: g.norm_title })}" style="display:block;color:inherit;text-decoration:none">
-  <div style="display:flex;gap:12px">
-    <span class="thumb" style="width:52px;height:70px;border-radius:6px;background:var(--color-bg)">${
-      g.cover_url ? `<img src="${esc(g.cover_url)}" alt="" loading="lazy">` : `<span style="font-size:15px">${esc(initials(g.title))}</span>`
-    }</span>
-    <div style="min-width:0">
-      <div class="card-title" style="font-size:15px">${esc(g.title)}</div>
-      <div style="font-size:11px;margin-top:4px;color:color-mix(in srgb, var(--color-text) 45%, transparent)">${esc((g.genres ?? "").split(", ").slice(0, 3).join(", "))}</div>
-      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center">
-        <span class="tag" style="background:#1d2a14;color:#a3d95a;box-shadow:inset 0 0 0 1px #3f5c22">${icon("lightning", 9)} GFN</span>
-        ${g.best_discount > 0 ? `<span class="tag tag-accent" title="Best discount across the stores selling it">−${g.best_discount}%</span>` : ""}
-        ${priceTags(g.prices)}
-        ${g.stores.map((s) => `<span class="store-pill">${storeMark(CATALOGUE_STORES[s] ?? "?", 12)}${esc(STORE_NAMES[CATALOGUE_STORES[s]] ?? CATALOGUE_STORES[s] ?? s)}</span>`).join("")}
-      </div>
-    </div>
-  </div>
-</a></div>`,
-  )
-  .join("\n")}
+    : `<div class="grid">
+${games.map((g) => discoverTile(g, filters)).join("\n")}
 </div>`
 }`;
+
+// The Library's tile, with what Discover knows instead of what ownership knows:
+// every one of these streams, so GFN is a given rather than a badge worth
+// earning, and the discount takes the score's corner.
+const discoverTile = (g, filters) => `<div class="tile-wrap">
+${starForm(g, `/discover${qs(filters)}`, ` style="position:absolute;top:7px;left:7px;z-index:1"`)}
+<a class="tile" href="/discover${qs({ ...filters, title: g.norm_title })}">
+  ${coverArt(g)}
+    <span class="gfn-badge" title="In the GeForce NOW catalogue">${icon("lightning", 9)}GFN</span>
+    ${g.best_discount > 0 ? `<span class="deal-badge" title="Best discount across the stores selling it">−${g.best_discount}%</span>` : ""}
+  </div>
+  <span class="tile-title">${esc(g.title)}</span>
+  <span class="tile-genres">${esc((g.genres ?? "").split(", ").slice(0, 3).join(", "))}</span>
+  ${g.prices.length ? `<span class="pills">${priceTags(g.prices)}</span>` : ""}
+  <span class="pills">${g.stores
+    .map((s) => storePill({ store: CATALOGUE_STORES[s] ?? s }))
+    .join("")}</span>
+</a></div>`;
 
 const priceTags = (prices = []) =>
   prices
