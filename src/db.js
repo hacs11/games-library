@@ -351,7 +351,11 @@ export function discoverCount(db, filters = {}) {
   return discoverGames(db, filters, 0).length;
 }
 
+// Prices and scores are not a Store with a Connection, so nothing was ever
+// written to store_credential for them and the card said "never synced" no
+// matter how recently it ran. Their own rows carry when they were fetched.
 export const priceCounts = (db) => ({
+  fetched: db.prepare("SELECT max(fetched_at) t FROM catalogue_price").get().t,
   apps: db.prepare("SELECT count(*) c FROM steam_app").get().c,
   products: db.prepare("SELECT count(*) c FROM gog_app").get().c,
   titles: db.prepare("SELECT count(*) c FROM xbox_app").get().c,
@@ -415,6 +419,7 @@ export function genreList(db, table = "game") {
 }
 
 export const ratingCounts = (db) => ({
+  fetched: db.prepare("SELECT max(fetched_at) t FROM steam_rating").get().t,
   metacritic: db.prepare("SELECT count(*) c FROM game WHERE rating_source = 'metacritic'").get().c,
   igdb: db.prepare("SELECT count(*) c FROM game WHERE rating_source LIKE 'igdb:%'").get().c,
 });

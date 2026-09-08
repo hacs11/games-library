@@ -94,6 +94,7 @@ test("the on-sale filter and discount sort use the real discount", async () => {
   assert.deepEqual(discoverGames(db, { sort: "discount" }).map((g) => g.title), ["Half Off", "Full Price"]);
   assert.equal(discoverCount(db, { sale: true }), 1);
   assert.deepEqual(priceCounts(db), {
+    fetched: "now",
     apps: 2,
     products: 0,
     titles: 0,

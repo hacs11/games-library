@@ -64,7 +64,11 @@ test("Metacritic wins over the IGDB aggregate, and says which it is", async () =
   assert.equal(games["Control"].rating_url, null);
 
   // Obscure Thing has no score from either source, so it stays unrated.
-  assert.deepEqual(ratingCounts(db), { metacritic: 1, igdb: 1 });
+  const { fetched, ...counts } = ratingCounts(db);
+  assert.deepEqual(counts, { metacritic: 1, igdb: 1 });
+  // The Connect card dates itself from the last score fetched, not from an
+  // IGDB credential that syncStore never touches.
+  assert.ok(fetched);
 });
 
 // 193 rate-limited requests: asking twice for a game with no score would burn

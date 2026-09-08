@@ -858,7 +858,10 @@ ${connectCard({
 ${connectCard({
   store: "steam",
   label: "Catalogue prices",
-  row: { status: PRICE_STORES.some((s) => counts.prices?.[s]?.priced) ? "connected" : undefined },
+  row: {
+    status: PRICE_STORES.some((s) => counts.prices?.[s]?.priced) ? "connected" : undefined,
+    last_synced_at: counts.prices?.fetched,
+  },
   counts: PRICE_STORES.some((s) => counts.prices?.[s]?.priced)
     ? PRICE_STORES
         .map((s) => `${STORE_NAMES[s]} ${counts.prices[s].priced} priced · ${counts.prices[s].onSale} on sale`)
@@ -872,7 +875,9 @@ ${connectCard({
 ${connectCard({
   store: "igdb",
   label: "Scores & metadata",
-  row: by("igdb"),
+  // IGDB's own credential row is never synced through syncStore; what dates
+  // this card is the last score that was fetched.
+  row: { ...by("igdb"), last_synced_at: ratings.fetched ?? by("igdb")?.last_synced_at },
   counts: `${ratings.metacritic ?? 0} Metacritic · ${ratings.igdb ?? 0} IGDB aggregate`,
   action: running.ratings
     ? jobBar("ratings", running.ratings)
