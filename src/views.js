@@ -231,11 +231,28 @@ ${panel}
     const link = e.target.closest?.("a[data-keep-scroll]");
     if (link) sessionStorage.setItem(link.href, scrollY);
   });
-  // Starring is a POST that 303s to its own back URL, which is that same list.
+  // Every POST here 303s back to a list: to its own back URL where it carries
+  // one (starring), otherwise to the page the form is on (Connect's buttons).
   addEventListener("submit", (e) => {
     const back = e.target.elements.back;
-    if (back) sessionStorage.setItem(new URL(back.value, location).href, scrollY);
+    sessionStorage.setItem(back ? new URL(back.value, location).href : location.href, scrollY);
   });
+  // A refresh runs in the background: follow it, and reload once it is done so
+  // the page shows what it fetched.
+  if (document.querySelector("[data-job]")) {
+    (async function poll() {
+      const jobs = await fetch("/jobs").then((r) => r.json()).catch(() => null);
+      if (!jobs) return setTimeout(poll, 2000);  // server restarting: keep watching
+      for (const el of document.querySelectorAll("[data-job]")) {
+        const job = jobs[el.dataset.job];
+        if (!job) return location.reload();
+        el.querySelector("[data-job-label]").textContent = job.label;
+        Object.assign(el.querySelector("progress"), { value: job.value, max: job.max });
+      }
+      setTimeout(poll, 2000);
+    })();
+  }
+
   const parked = sessionStorage.getItem(location.href);
   if (parked !== null) {
     sessionStorage.removeItem(location.href);
@@ -745,6 +762,13 @@ const ago = (iso) => {
   return `synced ${days} day${days === 1 ? "" : "s"} ago`;
 };
 
+// While a refresh runs, its bar stands where its button was. data-job is what
+// the poller in the layout looks for.
+const jobBar = (name, job) => `<span data-job="${name}" style="display:flex;align-items:center;gap:8px;font-size:12px">
+  <span data-job-label class="muted">${esc(job.label)}</span>
+  <progress value="${job.value}" max="${job.max}" style="width:120px;height:6px"></progress>
+</span>`;
+
 const connectCard = ({ store, label, row, counts = "", body, action }) => `
 <div class="card elev-sm">
   <div class="connect-row">
@@ -771,6 +795,7 @@ const secretField = (label, name, saved, type = "text") =>
     placeholder="${saved ? "Saved — leave blank to keep" : ""}"${saved ? "" : " required"}></label>`;
 
 export const connectPage = (rows, pendingScores = 0, ratings = {}, counts = {}) => {
+  const running = counts.running ?? {};
   const by = (s) => rows.find((r) => r.store === s);
   const data = (s) => {
     const r = by(s);
@@ -839,7 +864,9 @@ ${connectCard({
         .map((s) => `${STORE_NAMES[s]} ${counts.prices[s].priced} priced · ${counts.prices[s].onSale} on sale`)
         .join(" — ")
     : "not fetched yet",
-  action: `<form class="inline" method="post" action="/prices"><button class="btn btn-secondary" style="font-size:12px">Refresh prices</button></form>`,
+  action: running.prices
+    ? jobBar("prices", running.prices)
+    : `<form class="inline" method="post" action="/prices"><button class="btn btn-secondary" style="font-size:12px">Refresh prices</button></form>`,
   body: `<p class="intro" style="margin:0">Steam, GOG and Xbox prices in AUD for the Discover catalogue, resolved by title against each store's own catalogue. Xbox covers Play Anywhere titles only, the same rule your Xbox library follows. Epic publishes a list price but no discount, so its titles show no price. Takes a couple of minutes.</p>`,
 })}
 ${connectCard({
@@ -847,9 +874,11 @@ ${connectCard({
   label: "Scores & metadata",
   row: by("igdb"),
   counts: `${ratings.metacritic ?? 0} Metacritic · ${ratings.igdb ?? 0} IGDB aggregate`,
-  action: `<form class="inline" method="post" action="/ratings"><button class="btn btn-secondary" style="font-size:12px">${
-    pendingScores > 0 ? `Fetch ${Math.min(pendingScores, 250)} scores` : "Refresh scores"
-  }</button></form>`,
+  action: running.ratings
+    ? jobBar("ratings", running.ratings)
+    : `<form class="inline" method="post" action="/ratings"><button class="btn btn-secondary" style="font-size:12px">${
+        pendingScores > 0 ? `Fetch ${Math.min(pendingScores, 250)} scores` : "Refresh scores"
+      }</button></form>`,
   body: `<form method="post" action="/connect/igdb">
     <p class="intro" style="margin:0 0 8px">IGDB identifies games across stores and supplies art, genres and years. Register at <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener">dev.twitch.tv/console/apps</a>.${
       pendingScores > 0 ? ` <strong>${pendingScores} Steam titles have no Metacritic score yet</strong> (yours first, then Discover's) — Steam rate limits this, so it runs in batches.` : ""

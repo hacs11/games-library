@@ -39,6 +39,36 @@ const entitlementCounts = () =>
     db.prepare("SELECT store, count(*) c FROM entitlement GROUP BY store").all().map((r) => [r.store, r.c]),
   );
 
+// A refresh that takes minutes should not hold the browser open for minutes.
+// It runs in the background and reports which step it is on; the Connect page
+// polls /jobs. Kept in memory on purpose — a job does not outlive the process
+// running it, and a restart mid-refresh loses nothing but the bar.
+const jobs = new Map();
+
+function start(name, steps) {
+  if (jobs.has(name)) return;
+  const job = { steps, step: 0 };
+  jobs.set(name, job);
+  (async () => {
+    for (const [, fn] of steps) {
+      await Promise.resolve()
+        .then(fn)
+        .catch((err) => console.error(`${name}: ${err.message}`));
+      job.step++;
+    }
+  })().finally(() => jobs.delete(name));
+}
+
+// Step count is the fallback bar; a step with its own measure (Metacritic asks
+// one appid at a time and can say how many are left) reports that instead.
+function progress(job) {
+  const [label, , measure] = job.steps[job.step] ?? job.steps[job.steps.length - 1];
+  const fine = measure?.();
+  return fine?.max
+    ? { label, value: fine.value, max: fine.max, step: job.step + 1, steps: job.steps.length }
+    : { label, value: job.step, max: job.steps.length, step: job.step + 1, steps: job.steps.length };
+}
+
 const routes = {
   "GET /": (req, res) => {
     const p = new URL(req.url, "http://x").searchParams;
@@ -85,6 +115,7 @@ const routes = {
       page(
         "Connect",
         connectPage(stores(db), pendingCount(db), ratingCounts(db), {
+          running: Object.fromEntries([...jobs].map(([name, j]) => [name, progress(j)])),
           ...entitlementCounts(),
           gfn: db.prepare("SELECT count(*) c FROM gfn_entry").get().c,
           prices: priceCounts(db),
@@ -180,26 +211,45 @@ const routes = {
   // Rate limited to ~200 requests per 5 minutes, so this is its own action
   // rather than part of a Sync, and picks up where it left off.
   // Resolving 185k Steam apps then pricing ~1,900 of them: minutes, not
-  // seconds, so it is a button rather than part of any Sync.
-  "POST /prices": async (_req, res) => {
+  // seconds, so it is a button rather than part of any Sync — and it runs in
+  // the background, reporting which step it is on.
+  "POST /prices": (_req, res) => {
     const cred = credential(db, "steam");
-    if (cred?.data) {
-      await syncAppIds(db, cred.data).catch((err) => console.error(err.message));
-      await fetchPrices(db).catch((err) => console.error(err.message));
-    }
-    // GOG's catalogue is unauthenticated, so it runs whether or not Steam is
-    // connected — and one store failing must not cost you the other's prices.
-    await gog.syncCatalogue(db).catch((err) => console.error(err.message));
-    await xbox.syncCatalogue(db).catch((err) => console.error(err.message));
+    start("prices", [
+      // GOG and Xbox are unauthenticated, so they run whether or not Steam is
+      // connected — one store failing must not cost you the other's prices.
+      ["Resolving Steam app ids", () => cred?.data && syncAppIds(db, cred.data)],
+      ["Pricing the Steam catalogue", () => cred?.data && fetchPrices(db)],
+      ["Pricing the GOG catalogue", () => gog.syncCatalogue(db)],
+      ["Pricing the Xbox catalogue", () => xbox.syncCatalogue(db)],
+    ]);
     seeOther(res, "/connect");
   },
 
-  "POST /ratings": async (_req, res) => {
-    await fetchMetacritic(db).catch((err) => console.error(err.message));
-    await rateGames(db, criticScores).catch((err) => console.error(err.message));
+  "POST /ratings": (_req, res) => {
+    const baseline = pendingCount(db);
+    start("ratings", [
+      // Metacritic writes each score as it lands, so how many are left to ask
+      // for is progress in itself — no instrumenting the fetch loop for it.
+      // fetchMetacritic asks for at most 250, so what it has got through is
+      // however far the pending count has fallen.
+      ["Fetching Metacritic scores", () => fetchMetacritic(db), () => ({
+        value: baseline - pendingCount(db),
+        max: Math.min(baseline, 250),
+      })],
+      ["Fetching IGDB critic aggregates", () => rateGames(db, criticScores)],
+    ]);
     seeOther(res, "/connect");
   },
 
+  // Polled by the Connect page while a refresh is running.
+  "GET /jobs": (_req, res) =>
+    res
+      .writeHead(200, { "content-type": "application/json" })
+      .end(JSON.stringify(Object.fromEntries([...jobs].map(([name, j]) => [name, progress(j)])))),
+
+  // The page never echoes a saved secret, so a blank one means "unchanged"
+  // rather than "erase it".
   "POST /connect/steam": async (req, res) => {
     const { api_key, steam_id } = await body(req);
     const saved = credential(db, "steam")?.data ?? {};
