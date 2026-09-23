@@ -18,7 +18,7 @@ const ICONS = {
 };
 
 export const icon = (name, size = 15, style = "") =>
-  `<svg viewBox="0 0 256 256" width="${size}" height="${size}" fill="currentColor" aria-hidden="true" style="${style}">${ICONS[name]}</svg>`;
+  `<svg viewBox="0 0 256 256" width="${size}" height="${size}" fill="currentColor" aria-hidden="true" style="${style}"><use href="#icon-${name}"/></svg>`;
 
 export const STORE_NAMES = { steam: "Steam", gog: "GOG", epic: "Epic", xbox: "Xbox" };
 const STORE_LABELS = {
@@ -39,9 +39,17 @@ const STORE_ICONS = {
   xbox: `<circle cx="12" cy="12" r="12" fill="#107C10"/><path fill="#fff" transform="translate(4.8 4.8) scale(0.6)" d="M4.102 21.033C6.211 22.881 8.977 24 12 24c3.026 0 5.789-1.119 7.902-2.967 1.877-1.912-4.316-8.709-7.902-11.417-3.582 2.708-9.779 9.505-7.898 11.417zm11.16-14.406c2.5 2.961 7.484 10.313 6.076 12.912C23.002 17.48 24 14.861 24 12.004c0-3.34-1.365-6.362-3.57-8.536 0 0-.027-.022-.082-.042-.063-.022-.152-.045-.281-.045-.592 0-1.985.434-4.805 3.246zM3.654 3.426c-.057.02-.082.041-.086.042C1.365 5.642 0 8.664 0 12.004c0 2.854.998 5.473 2.661 7.533-1.401-2.605 3.579-9.951 6.08-12.91-2.82-2.813-4.216-3.245-4.806-3.245-.131 0-.223.021-.281.046v-.002zM12 3.551S9.055 1.828 6.755 1.746c-.903-.033-1.454.295-1.521.339C7.379.646 9.659 0 11.984 0H12c2.334 0 4.605.646 6.766 2.085-.068-.046-.615-.372-1.52-.339C14.946 1.828 12 3.545 12 3.545v.006z"/>`,
 };
 
+// Every mark and icon is defined once per page and referenced by id. Inlined,
+// their paths were repeated on every tile, pill and price tag — 844 copies,
+// 800KB of a 1.09MB Discover page.
+const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden="true">${[
+  ...Object.entries(STORE_ICONS).map(([store, body]) => `<symbol id="mark-${store}" viewBox="0 0 24 24">${body}</symbol>`),
+  ...Object.entries(ICONS).map(([name, body]) => `<symbol id="icon-${name}" viewBox="0 0 256 256">${body}</symbol>`),
+].join("")}</svg>`;
+
 export const storeMark = (store, size = 13) =>
   STORE_ICONS[store]
-    ? `<svg viewBox="0 0 24 24" width="${size}" height="${size}" role="img" aria-label="${esc(STORE_LABELS[store] ?? store)}" style="border-radius:50%;display:block">${STORE_ICONS[store]}</svg>`
+    ? `<svg viewBox="0 0 24 24" width="${size}" height="${size}" role="img" aria-label="${esc(STORE_LABELS[store] ?? store)}" style="border-radius:50%;display:block"><use href="#mark-${store}"/></svg>`
     : `<span style="font-size:10px;font-weight:600;color:var(--color-accent-400)">${esc((store ?? "?")[0].toUpperCase())}</span>`;
 
 // Logo + name, the setting the owner chose.
@@ -219,6 +227,7 @@ export const layout = (title, body, { path = "/", pending = 0, panel = "" } = {}
   }
   @media (max-width: 640px) { .table-wrap { overflow-x: auto; } }
 </style>
+${SPRITE}
 <header class="header">
   <a class="brand" href="/"><span class="brand-mark">GL</span><span class="brand-name">Games Library</span></a>
   ${NAV.map(
