@@ -245,11 +245,17 @@ export function listGames(db, { q = "", store = "", gfn = false, all = false, ge
       ...r,
       streamable: !!r.streamable,
       // "steam:AVAILABLE" -> { store, status }: GFN support belongs to the
-      // Entitlement, so each badge carries its own.
-      stores: r.stores.split(",").map((s) => {
-        const [store, status] = s.split(":");
-        return { store, status: status || null };
-      }),
+      // Entitlement, so each badge carries its own. Two copies on one Store
+      // are one badge, streamable if either copy is.
+      stores: [
+        ...r.stores
+          .split(",")
+          .reduce((by, s) => {
+            const [store, status] = s.split(":");
+            if (!by.get(store)) by.set(store, status || null);
+            return by;
+          }, new Map()),
+      ].map(([store, status]) => ({ store, status })),
     }));
 }
 

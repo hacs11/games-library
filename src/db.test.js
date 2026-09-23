@@ -102,3 +102,22 @@ test("the studio filter matches a whole name on both Library and Discover", () =
   assert.deepEqual(found.map((g) => [g.title, g.studio]), [["Hades II", "Supergiant Games"]]);
   assert.deepEqual(studioList(db, "gfn_entry"), ["Supergiant Games", "Valve"]);
 });
+
+// Two Entitlements from one Store on one Game is normal — Agony and Agony
+// UNRATED, a single-player and a multiplayer appid — but the row is about
+// where you own the Game, and "GOG GOG" says nothing twice.
+test("a Game owned twice on one Store shows that Store once, streamable if either copy is", () => {
+  const db = open(":memory:");
+  const now = "2026-01-01";
+  db.exec(`
+    INSERT INTO game (id, title, norm_title) VALUES (1, 'Agony', 'agony');
+    INSERT INTO entitlement (store, store_game_id, store_title, game_id, gfn_status, first_seen, last_seen) VALUES
+      ('gog', '1', 'Agony', 1, NULL, '${now}', '${now}'),
+      ('gog', '2', 'Agony UNRATED', 1, 'AVAILABLE', '${now}', '${now}'),
+      ('steam', '3', 'Agony', 1, NULL, '${now}', '${now}');
+  `);
+  assert.deepEqual(listGames(db)[0].stores, [
+    { store: "gog", status: "AVAILABLE" },
+    { store: "steam", status: null },
+  ]);
+});
