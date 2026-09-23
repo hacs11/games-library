@@ -741,7 +741,7 @@ const marketLow = (item) => {
 // catalogue entries you do not own, so there is no Game row behind them.
 export const discoverPanel = (item, closeHref) => {
   if (!item) return "";
-  const cheapest = [...item.prices].sort((a, b) => (a.formatted ?? "").length - (b.formatted ?? "").length);
+  const cheapest = item.prices.toSorted((a, b) => (a.cents ?? Infinity) - (b.cents ?? Infinity));
   return `
 <a class="scrim" data-keep-scroll href="${esc(closeHref)}" aria-label="Close"></a>
 <aside class="panel" role="dialog" aria-modal="true" aria-label="${esc(item.title)}">

@@ -370,10 +370,13 @@ const picked = (catalogueStore, col) => `CASE WHEN :store IN ('', '${catalogueSt
 // a group — a bare aggregate over them picks the one value there is.
 const PRICE_COLUMNS = `max(sp.formatted) AS steam_price,
               max(sp.discount_percent) AS steam_discount,
+              max(sp.final_cents) AS steam_cents,
               max(gp.formatted) AS gog_price,
               max(gp.discount_percent) AS gog_discount,
+              max(gp.final_cents) AS gog_cents,
               max(xp.formatted) AS xbox_price,
               max(xp.discount_percent) AS xbox_discount,
+              max(xp.final_cents) AS xbox_cents,
               max(coalesce(${picked("STEAM", "sp.discount_percent")}, 0), coalesce(${picked("GOG", "gp.discount_percent")}, 0),
                   coalesce(${picked("XBOX", "xp.discount_percent")}, 0)) AS best_discount,
               nullif(min(coalesce(${picked("STEAM", "sp.final_cents")}, 1e15), coalesce(${picked("GOG", "gp.final_cents")}, 1e15),
@@ -441,9 +444,9 @@ const MARKET_JOIN = `LEFT JOIN steam_app ma ON ma.norm_title = g.norm_title
 
 function withPrices(r) {
   const prices = [
-    { store: "steam", formatted: r.steam_price, discount: r.steam_discount },
-    { store: "gog", formatted: r.gog_price, discount: r.gog_discount },
-    { store: "xbox", formatted: r.xbox_price, discount: r.xbox_discount },
+    { store: "steam", formatted: r.steam_price, discount: r.steam_discount, cents: r.steam_cents },
+    { store: "gog", formatted: r.gog_price, discount: r.gog_discount, cents: r.gog_cents },
+    { store: "xbox", formatted: r.xbox_price, discount: r.xbox_discount, cents: r.xbox_cents },
   ].filter((p) => p.formatted);
   return {
     ...r,

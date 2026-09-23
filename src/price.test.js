@@ -5,6 +5,7 @@ import { syncAppIds, fetchPrices } from "./steam.js";
 import { syncCatalogue } from "./gog.js";
 import { syncCatalogue as syncXboxCatalogue } from "./xbox.js";
 import { syncGfn } from "./gfn.js";
+import { discoverPanel } from "./views.js";
 
 const stub = (handler) => {
   const real = globalThis.fetch;
@@ -244,7 +245,7 @@ test("a discount rounds to whole percent, since the service returns 19.999998 fo
   }
 
   const [game] = discoverGames(db);
-  assert.deepEqual(game.prices, [{ store: "xbox", formatted: "A$14.99", discount: 50 }]);
+  assert.deepEqual(game.prices, [{ store: "xbox", formatted: "A$14.99", discount: 50, cents: 1499 }]);
   assert.equal(game.best_discount, 50);
 });
 
@@ -302,4 +303,21 @@ test("a Store filter narrows the on-sale filter and the deal sorts to that Store
     "unfiltered, best-across-stores is still the answer",
   );
   assert.equal(discoverDetail(db, "both stores").best_discount, 50, "the panel is unfiltered");
+});
+
+// "A$4.99" and "A$5.00" are the same length, so ranking by the formatted
+// string sent the button to whichever store happened to be listed first.
+test("the Discover panel's store button goes to the cheapest store, by cents", () => {
+  const db = open(":memory:");
+  db.exec(`
+    INSERT INTO gfn_entry (title, norm_title, store, status) VALUES
+      ('Hades', 'hades', 'STEAM', 'AVAILABLE'), ('Hades', 'hades', 'GOG', 'AVAILABLE');
+    INSERT INTO steam_app (norm_title, appid) VALUES ('hades', '1');
+    INSERT INTO gog_app (norm_title, product_id) VALUES ('hades', '2');
+    INSERT INTO catalogue_price (store, store_id, currency, final_cents, initial_cents, discount_percent, formatted, fetched_at) VALUES
+      ('steam', '1', 'AUD', 500, 500, NULL, 'A$5.00', 'now'),
+      ('gog', '2', 'AUD', 499, 499, NULL, 'A$4.99', 'now');
+  `);
+  const html = discoverPanel(discoverDetail(db, "hades"), "/discover");
+  assert.match(html, /href="https:\/\/www\.gog\.com\/en\/games\?query=Hades"[^>]*>Open store page/);
 });
