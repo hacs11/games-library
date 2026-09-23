@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { open, discoverGames, discoverCount, discoverDetail, priceCounts } from "./db.js";
+import { open, discoverGames, discoverCount, discoverTallies, discoverDetail, priceCounts } from "./db.js";
 import { syncAppIds, fetchPrices } from "./steam.js";
 import { syncCatalogue } from "./gog.js";
 import { syncCatalogue as syncXboxCatalogue } from "./xbox.js";
@@ -303,6 +303,8 @@ test("a Store filter narrows the on-sale filter and the deal sorts to that Store
     "unfiltered, best-across-stores is still the answer",
   );
   assert.equal(discoverDetail(db, "both stores").best_discount, 50, "the panel is unfiltered");
+  assert.equal(discoverTallies(db, { store: "XBOX", sale: true }).sale, 1, "the On sale tile counts the same sales the filter shows");
+  assert.equal(discoverTallies(db, { store: "XBOX", sale: true }).all, 2, "and Everything ignores the toggle it would clear");
 });
 
 // "A$4.99" and "A$5.00" are the same length, so ranking by the formatted

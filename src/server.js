@@ -2,8 +2,8 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import {
   open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
-  discoverGames, discoverCount, discoverDetail, hiddenCount, staleSources, genreList, studioList, ratingCounts,
-  ownedCount, gameDetail, countGames, priceCounts, credential, toggleWatch, watchCount,
+  discoverGames, discoverCount, discoverTallies, discoverDetail, hiddenCount, staleSources, genreList, studioList, ratingCounts,
+  ownedCount, gameDetail, countGames, priceCounts, credential, toggleWatch,
 } from "./db.js";
 import { syncStore } from "./sync.js";
 import { syncGfn, applyGfn } from "./gfn.js";
@@ -159,7 +159,7 @@ const routes = {
     if (req.headers["x-panel"]) return html(res, discoverPanel(selected, `/discover${queryString(filters)}`));
     html(
       res,
-      page("Discover", discoverPage(discoverGames(db, filters, filters.limit ? 0 : 200), filters, discoverCount(db, filters), watchCount(db), genreList(db, "gfn_entry"), studioList(db, "gfn_entry")), "/discover", {
+      page("Discover", discoverPage(discoverGames(db, filters, filters.limit ? 0 : 200), filters, discoverCount(db, filters), discoverTallies(db, filters), genreList(db, "gfn_entry"), studioList(db, "gfn_entry")), "/discover", {
         panel: discoverPanel(selected, `/discover${queryString(filters)}`),
       }),
     );

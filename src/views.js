@@ -122,6 +122,24 @@ export const layout = (title, body, { path = "/", pending = 0, panel = "" } = {}
     color: color-mix(in srgb, var(--color-text) 75%, transparent); background: transparent;
   }
   .gfn-toggle.on { border-color: #5d8a2c; color: #a3d95a; background: #1d2a14; }
+  .quick-views { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .quick-view {
+    display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; text-decoration: none; color: inherit;
+    border-radius: var(--radius-md); background: var(--color-surface); box-shadow: var(--shadow-sm);
+  }
+  .quick-view:hover { box-shadow: 0 0 0 1px var(--color-neutral-600); }
+  .quick-view.on { background: var(--color-accent-900); box-shadow: inset 0 0 0 1px var(--color-accent); }
+  .quick-view strong { display: flex; align-items: center; gap: 8px; font-size: 26px; font-weight: 500; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+  .quick-view > span { font-size: 13px; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
+  .quick-view.on > span { color: var(--color-accent-300); }
+  @media (max-width: 720px) { .quick-views { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .discover-filters .search-wrap { max-width: none; }
+  .discover-summary {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 12px;
+    font-size: 13px; color: color-mix(in srgb, var(--color-text) 62%, transparent);
+  }
+  .discover-summary-links { display: flex; gap: 16px; white-space: nowrap; }
+  .discover-summary .gfn-toggle { border: 0; padding: 0; color: var(--color-accent); }
   .score-range { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
   .score-range input[type=range] { width: 92px; accent-color: var(--color-accent); }
   /* The readout changes text on every drag step ("any", "5", "95"). Without a
@@ -614,16 +632,36 @@ const starForm = (item, back, attrs = "") => `<form class="inline" method="post"
 // The Stores whose own catalogue we can read a price out of.
 const PRICE_STORES = ["steam", "gog", "xbox"];
 
-export const discoverPage = (games, filters = {}, total = 0, watching = 0, genres = [], studios = []) => `
-${title("Discover", {
-  count: games.length < total ? `showing ${games.length} of ${total} titles` : `${total} titles`,
-  intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's, GOG's and Xbox's, in AUD.",
-})}
-<p class="intro" style="margin:-8px 0 14px">An <span class="low-badge">ATL</span> mark means the cheapest retail price anywhere is at its all-time low — which store that is is not published, so check it streams. All-time lows by <a href="https://gg.deals/" target="_blank" rel="noopener">gg.deals</a>.</p>
-<form class="filters" method="get" action="/discover">
+const SCORE_STEPS = [0, 50, 60, 70, 75, 80, 85, 90];
+
+const count = (n) => (n == null ? "–" : n.toLocaleString("en-AU"));
+
+// A quick view is one toggle filter shown with how many titles it holds;
+// "Everything" is all three off.
+const quickView = (filters, key, n, label, extra = "") => {
+  const on = key ? filters[key] : !filters.sale && !filters.low && !filters.watch;
+  const href = key ? qs({ ...filters, [key]: !filters[key] }) : qs({ ...filters, sale: false, low: false, watch: false });
+  return `<a class="quick-view${on ? " on" : ""}" href="/discover${href}"${on ? ` aria-current="true"` : ""}${extra}>
+    <strong>${count(n)}${key === "low" ? ` <span class="low-badge">ATL</span>` : ""}</strong>
+    <span>${label}</span>
+  </a>`;
+};
+
+export const discoverPage = (games, filters = {}, total = 0, tallies = {}, genres = [], studios = []) => `
+${title("Discover", { count: "GeForce NOW · Australia · not owned" })}
+<nav class="quick-views" aria-label="Quick views">
+  ${quickView(filters, "", tallies.all ?? total, "Everything that streams")}
+  ${quickView(filters, "sale", tallies.sale, "On sale now")}
+  ${quickView(filters, "low", tallies.low, "At an all-time low",
+    ` title="The cheapest retail price anywhere is at its all-time low. gg.deals doesn't say which store — check it streams."`)}
+  ${quickView(filters, "watch", tallies.watch, "On your watchlist")}
+</nav>
+<form class="filters discover-filters" method="get" action="/discover" onchange="this.requestSubmit()">
+  ${["sale", "low", "watch"].map((k) => (filters[k] ? `<input type="hidden" name="${k}" value="1">` : "")).join("")}
+  ${filters.limit ? `<input type="hidden" name="limit" value="${esc(filters.limit)}">` : ""}
   <span class="search-wrap">
     ${icon("search", 15)}
-    <input class="input" type="search" name="q" placeholder="Search the catalogue" value="${esc(filters.q ?? "")}">
+    <input class="input" type="search" name="q" placeholder="Search ${count(tallies.all ?? total)} titles" value="${esc(filters.q ?? "")}">
   </span>
   <select class="input" name="store" style="min-width:150px">
     <option value="">Any store</option>
@@ -639,24 +677,26 @@ ${title("Discover", {
     ${genres.map((g) => `<option value="${esc(g)}"${filters.genre === g ? " selected" : ""}>${esc(g)}</option>`).join("")}
   </select>
   ${studioFilter(studios, filters.studio)}
-  <select class="input" name="sort" style="min-width:150px">
+  <select class="input" name="minScore" aria-label="Minimum score" style="min-width:110px">
+    ${[...new Set([...SCORE_STEPS, Number(filters.minScore) || 0])]
+      .sort((a, b) => a - b)
+      .map((v) => `<option value="${v}"${(Number(filters.minScore) || 0) === v ? " selected" : ""}>${v ? `Score ${v}+` : "Any score"}</option>`)
+      .join("")}
+  </select>
+  <select class="input" name="sort" aria-label="Sort" style="min-width:150px">
     <option value="">A–Z</option>
     <option value="discount"${filters.sort === "discount" ? " selected" : ""}>Biggest discount</option>
     <option value="saving"${filters.sort === "saving" ? " selected" : ""}>Biggest saving</option>
     <option value="price"${filters.sort === "price" ? " selected" : ""}>Price: low to high</option>
     <option value="rating"${filters.sort === "rating" ? " selected" : ""}>Highest score</option>
   </select>
-  ${scoreRange(filters.minScore)}
-  <button class="btn btn-secondary">Apply</button>
-  ${clearLink("/discover", filters)}
-  <a class="gfn-toggle${filters.sale ? " on" : ""}" href="/discover${qs({ ...filters, sale: !filters.sale })}"
-     style="${filters.sale ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">On sale only</a>
-  <a class="gfn-toggle${filters.low ? " on" : ""}" href="/discover${qs({ ...filters, low: !filters.low })}"
-     style="${filters.low ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}"
-     title="Retail cheapest-anywhere is at its all-time low. Not tied to a store — gg.deals' free tier names none.">At all-time low</a>
-  <a class="gfn-toggle${filters.watch ? " on" : ""}" href="/discover${qs({ ...filters, watch: !filters.watch })}"
-     style="${filters.watch ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">${icon(filters.watch ? "star" : "star-outline", 12)} Watchlist${watching ? ` (${watching})` : ""}</a>
 </form>
+<div class="discover-summary">
+  <span>${games.length < total ? `showing ${games.length} of ${count(total)} titles` : `${count(total)} titles`} · prices from Steam, GOG and Xbox in AUD · all-time lows by <a href="https://gg.deals/" target="_blank" rel="noopener">gg.deals</a></span>
+  <span class="discover-summary-links">${clearLink("/discover", filters)}${
+    games.length < total ? `<a href="/discover${qs({ ...filters, limit: "all" })}">Show all</a>` : ""
+  }</span>
+</div>
 <hr class="rule-fade" style="margin-bottom:22px">
 ${
   games.length === 0

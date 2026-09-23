@@ -493,6 +493,19 @@ export function discoverCount(db, filters = {}) {
   return discoverGames(db, filters, 0).length;
 }
 
+// The Discover quick views, each counted on its own under every other filter,
+// so a number is what clicking it alone would show — and on sale under a Store
+// filter is on sale at that Store, because best_discount is already picked().
+export function discoverTallies(db, filters = {}) {
+  const rows = discoverGames(db, { ...filters, sale: false, low: false, watch: false }, 0);
+  return {
+    all: rows.length,
+    sale: rows.filter((r) => r.best_discount > 0).length,
+    low: rows.filter((r) => r.at_retail_low).length,
+    watch: rows.filter((r) => r.watched).length,
+  };
+}
+
 // Prices and scores are not a Store with a Connection, so nothing was ever
 // written to store_credential for them and the card said "never synced" no
 // matter how recently it ran. Their own rows carry when they were fetched.

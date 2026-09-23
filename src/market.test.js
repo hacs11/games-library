@@ -215,7 +215,7 @@ test("the Discover grid marks an all-time low and attributes it once, page-wide"
   const db = seeded();
   await fetched(db, AT_LOW);
 
-  const html = discoverPage(discoverGames(db), {}, 2, 0, [], []);
+  const html = discoverPage(discoverGames(db), {}, 2, {}, [], []);
   assert.match(html, /class="low-badge"[^>]*>ATL</, "the mark is on the tile");
   assert.match(html, /href="https:\/\/gg\.deals\/"/, "attributed once for the whole grid");
 });
