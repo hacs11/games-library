@@ -28,10 +28,16 @@ const NON_GAME = /\b(demo|soundtrack|ost|playtest|beta|pre-?game editor|editor|d
 // resolved by IGDB is flagged for review rather than merged silently.
 export async function matchEntitlements(db, store, identify, identifyByName = null) {
   const rows = db
-    .prepare("SELECT id, store_game_id, alt_id, store_title FROM entitlement WHERE store = ? AND locked = 0")
+    .prepare("SELECT id, store_game_id, alt_id, store_title, game_id, confidence FROM entitlement WHERE store = ? AND locked = 0")
     .all(store);
   if (rows.length === 0) return { igdb: 0, fallback: 0 };
 
+  // Which lookups actually answered. An outage is not evidence that an earlier
+  // identification was wrong, so what that lookup found last time is kept
+  // rather than re-guessed by title — which would split Games IGDB had joined
+  // and strand their cover, genres and score on a Game nothing points at.
+  let idsDown = false;
+  let namesDown = false;
   let found = new Map();
   try {
     // Epic Entitlements carry two candidate ids and IGDB indexes only one of
@@ -44,6 +50,7 @@ export async function matchEntitlements(db, store, identify, identifyByName = nu
     // The failure is recorded against IGDB so the Connect page shows it,
     // rather than only appearing as an inexplicably full review tray.
     console.error(`IGDB lookup failed for ${store}: ${err.message}`);
+    idsDown = true;
     db.prepare("UPDATE store_credential SET status = 'error', last_error = ? WHERE store = 'igdb'")
       .run(`${store}: ${err.message}`);
   }
@@ -57,6 +64,7 @@ export async function matchEntitlements(db, store, identify, identifyByName = nu
       byName = await identifyByName(db, missed.map((r) => r.store_title), normaliseTitle);
     } catch (err) {
       console.error(`IGDB name lookup failed for ${store}: ${err.message}`);
+      namesDown = true;
     }
   }
 
@@ -79,6 +87,10 @@ export async function matchEntitlements(db, store, identify, identifyByName = nu
     // itself. Junk keeps its own Game, which classifyGames then hides.
     const junk = NON_GAME.test(row.store_title);
     const byId = junk ? null : found.get(String(row.store_game_id)) ?? (row.alt_id && found.get(String(row.alt_id)));
+    // Kept only when the lookup that made the match is the one that failed: a
+    // lookup that answered and found nothing is an answer.
+    const unanswered = (idsDown && row.confidence === "igdb") || (namesDown && row.confidence === "igdb_name");
+    if (!byId && row.game_id && unanswered) continue;
     const hit = byId || (junk ? null : byName.get(normaliseTitle(row.store_title)));
     if (hit) {
       assign.run(

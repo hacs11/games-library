@@ -223,3 +223,23 @@ test("a failed game_type lookup leaves everything visible", async () => {
   });
   assert.equal(listGames(db).length, 1, "hiding on a failed lookup would make games vanish");
 });
+
+// A Game IGDB identified carries the cover, genres and score; a title cluster
+// carries none of them. An outage is not evidence the identification was wrong.
+test("IGDB being down keeps what IGDB already identified rather than re-guessing it by title", async () => {
+  const db = await seeded("epic", "Fallout 2: A Post Nuclear Role Playing Game");
+  const found = async () => new Map();
+  const byName = async () =>
+    new Map([["fallout 2 a post nuclear role playing game", { igdb_id: 1, title: "Fallout 2" }]]);
+  await matchEntitlements(db, "epic", found, byName);
+  const before = db.prepare("SELECT game_id, confidence FROM entitlement").get();
+  assert.equal(before.confidence, "igdb_name");
+
+  const boom = async () => {
+    throw new Error("IGDB 503");
+  };
+  await matchEntitlements(db, "epic", boom, boom);
+
+  assert.deepEqual(db.prepare("SELECT game_id, confidence FROM entitlement").get(), before);
+  assert.equal(db.prepare("SELECT count(*) c FROM game WHERE igdb_id = 1").get().c, 1, "the identified Game survives");
+});
