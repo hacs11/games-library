@@ -30,20 +30,21 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
 
   const now = new Date().toISOString();
   const upsert = db.prepare(
-    `INSERT INTO entitlement (store, store_game_id, store_title, alt_id, playtime_minutes, game_id, first_seen, last_seen)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO entitlement (store, store_game_id, store_title, alt_id, playtime_minutes, first_seen, last_seen)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT (store, store_game_id) DO UPDATE SET
           store_title      = excluded.store_title,
           alt_id           = excluded.alt_id,
           playtime_minutes = coalesce(excluded.playtime_minutes, entitlement.playtime_minutes),
-          last_seen   = excluded.last_seen,
-          game_id     = CASE WHEN entitlement.locked = 1 THEN entitlement.game_id ELSE excluded.game_id END`,
+          last_seen   = excluded.last_seen`,
   );
 
-  // game_id is left null: matchEntitlements owns the assignment. Guessing a
-  // Game here only to overwrite it a moment later abandons the row it created.
+  // game_id is not touched here: matchEntitlements owns the assignment, and
+  // re-matches every unlocked row anyway. Clearing it first would drop those
+  // Games from the Library for as long as IGDB takes to answer — and for good,
+  // if the process dies in between.
   for (const e of entitlements) {
-    upsert.run(store, e.store_game_id, e.store_title, e.alt_id ?? null, e.playtime_minutes ?? null, null, now, now);
+    upsert.run(store, e.store_game_id, e.store_title, e.alt_id ?? null, e.playtime_minutes ?? null, now, now);
   }
 
   await matchEntitlements(db, store, identify, identifyByName);

@@ -66,3 +66,26 @@ test("a private Steam profile is reported as a connection problem, not zero game
     globalThis.fetch = real;
   }
 });
+
+// IGDB is asked mid-Sync, over the network, for seconds at a time. A Library
+// rendered in that window — or left behind by a crash inside it — must not lose
+// every Game whose Entitlements were just re-stamped.
+test("a resync leaves each Entitlement on its Game while IGDB is being asked", async () => {
+  const db = connected();
+  await syncStore(db, "steam", fake("Hades", "Bastion"));
+  saveCredential(db, "igdb", { client_id: "c", client_secret: "s" });
+
+  const real = globalThis.fetch;
+  let orphaned = null;
+  globalThis.fetch = async () => {
+    orphaned ??= db.prepare("SELECT count(*) c FROM entitlement WHERE game_id IS NULL").get().c;
+    return new Response("", { status: 500 });
+  };
+  try {
+    await syncStore(db, "steam", fake("Hades", "Bastion"));
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.equal(orphaned, 0);
+  assert.equal(listGames(db).length, 2);
+});
