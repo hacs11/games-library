@@ -13,7 +13,7 @@ node --test --test-name-pattern "on-sale filter" "src/*.test.js"   # one test
 
 There is no `npm test`, no build, no linter, and **no npm dependencies at all** — Node 24 standard library only (`node:sqlite`, `node:http`, `node:test`, global `fetch`, template literals for views). Keep it that way; adding a dependency is a design decision, not a convenience.
 
-Writing to `data/library.db` from the host while the container is up corrupts the container's view of it (`database disk image is malformed`). Use the app's own buttons, or `docker restart games-library-web-1` after a host-side write.
+Writing to `data/library.db` from the host while the container is up corrupts the container's view of it (`database disk image is malformed`). Use the app's own buttons, or `docker restart games-library-web-1` after a host-side write. A `PreToolUse` hook (`.claude/hooks/guard-library-db.sh`) denies the write while the container is up; reads still work through `sqlite3 "file:data/library.db?mode=ro"`.
 
 ## Domain language
 
