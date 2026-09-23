@@ -2,12 +2,13 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import {
   open, listGames, stores, saveCredential, unmatched, gameTitles, gameById, gameByTitle,
-  discoverGames, discoverCount, discoverDetail, hiddenCount, staleSources, genreList, ratingCounts,
+  discoverGames, discoverCount, discoverDetail, hiddenCount, staleSources, genreList, studioList, ratingCounts,
   ownedCount, gameDetail, countGames, priceCounts, credential, toggleWatch, watchCount,
 } from "./db.js";
 import { syncStore } from "./sync.js";
 import { syncGfn, applyGfn } from "./gfn.js";
 import { fetchMetacritic, pendingCount, syncAppIds, fetchPrices } from "./steam.js";
+import { fetchMarketLows } from "./ggdeals.js";
 import { matchEntitlements, mergeGames, rateGames, resolveGame } from "./match.js";
 import { identify, identifyByName, criticScores } from "./igdb.js";
 import * as gog from "./gog.js";
@@ -82,6 +83,7 @@ const routes = {
       q: p.get("q") ?? "",
       store: p.get("store") ?? "",
       genre: p.get("genre") ?? "",
+      studio: p.get("studio") ?? "",
       sort: p.get("sort") ?? "",
       minScore: Number(p.get("minScore")) || 0,
       gfn: p.get("gfn") === "1",
@@ -95,6 +97,9 @@ const routes = {
 
     const selected = p.get("game") ? gameDetail(db, p.get("game")) : null;
     const closeHref = `/${queryString({ ...filters, view, limit: p.get("limit") ?? "" })}`;
+    // The page's own script asks for just the panel, so opening and closing
+    // one swaps a fragment instead of re-rendering the whole list.
+    if (req.headers["x-panel"]) return html(res, detailPanel(selected, closeHref));
 
     res.setHeader("set-cookie", `view=${view}; Path=/; Max-Age=31536000; SameSite=Lax`);
     html(
@@ -104,6 +109,7 @@ const routes = {
         hidden: hiddenCount(db),
         stale: staleSources(db),
         genres: genreList(db),
+        studios: studioList(db),
         total: ownedCount(db),
         view,
       }), "/", { panel: detailPanel(selected, closeHref) }),
@@ -137,16 +143,20 @@ const routes = {
       q: p.get("q") ?? "",
       store: p.get("store") ?? "",
       sale: p.get("sale") === "1",
+      low: p.get("low") === "1",
       watch: p.get("watch") === "1",
       sort: p.get("sort") ?? "",
       genre: p.get("genre") ?? "",
+      studio: p.get("studio") ?? "",
+      minScore: Number(p.get("minScore")) || 0,
     };
     // Same shape as the Library panel: its own URL, so it is linkable and the
     // back button closes it.
     const selected = p.get("title") ? discoverDetail(db, p.get("title")) : null;
+    if (req.headers["x-panel"]) return html(res, discoverPanel(selected, `/discover${queryString(filters)}`));
     html(
       res,
-      page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters), watchCount(db), genreList(db, "gfn_entry")), "/discover", {
+      page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters), watchCount(db), genreList(db, "gfn_entry"), studioList(db, "gfn_entry")), "/discover", {
         panel: discoverPanel(selected, `/discover${queryString(filters)}`),
       }),
     );
@@ -221,6 +231,7 @@ const routes = {
   // the background, reporting which step it is on.
   "POST /prices": (_req, res) => {
     const cred = credential(db, "steam");
+    const gg = credential(db, "ggdeals");
     start("prices", [
       // GOG and Xbox are unauthenticated, so they run whether or not Steam is
       // connected — one store failing must not cost you the other's prices.
@@ -228,6 +239,9 @@ const routes = {
       ["Pricing the Steam catalogue", () => cred?.data && fetchPrices(db)],
       ["Pricing the GOG catalogue", () => gog.syncCatalogue(db)],
       ["Pricing the Xbox catalogue", () => xbox.syncCatalogue(db)],
+      // A Market Low is not a Store price (docs/adr/0006), but it is fetched on
+      // the same press: 24 requests against an hourly-refreshed source.
+      ["Fetching gg.deals market lows", () => gg?.data?.key && fetchMarketLows(db, gg.data)],
     ]);
     seeOther(res, "/connect");
   },
@@ -286,6 +300,12 @@ const routes = {
       client_id: client_id.trim(),
       client_secret: client_secret.trim() || saved.client_secret,
     });
+    seeOther(res, "/connect");
+  },
+
+  "POST /connect/ggdeals": async (req, res) => {
+    const { key } = await body(req);
+    saveCredential(db, "ggdeals", { key: key.trim() || credential(db, "ggdeals")?.data?.key });
     seeOther(res, "/connect");
   },
 

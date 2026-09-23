@@ -24,6 +24,11 @@ export async function fetchOwnedGames({ api_key, steam_id }) {
 
 const APPDETAILS = "https://store.steampowered.com/api/appdetails";
 
+// Steam writes the date as prose and localises it — "3 Aug, 2023", "Q1 2026",
+// or a bare year for an old title — so the year is the only part worth reading.
+const releaseYear = (data) =>
+  Number(String(data?.release_date?.date ?? "").match(/\b(?:19|20)\d{2}\b/)?.[0]) || null;
+
 // Steam's storefront API is undocumented and rate limited to roughly 200
 // requests per 5 minutes, so appids are fetched once and remembered — misses
 // included, since a game without a Metacritic score will not grow one.
@@ -31,21 +36,23 @@ export async function fetchMetacritic(db, { limit = 250, delay = 1600 } = {}) {
   const pending = db.prepare(`${PENDING} ORDER BY pri LIMIT ?`).all(limit);
 
   const remember = db.prepare(
-    "INSERT OR REPLACE INTO steam_rating (appid, score, url, fetched_at) VALUES (?, ?, ?, ?)",
+    "INSERT OR REPLACE INTO steam_rating (appid, score, url, year, year_at, fetched_at) VALUES (?, ?, ?, ?, ?, ?)",
   );
 
   let found = 0;
   for (const [i, row] of pending.entries()) {
     if (i > 0) await new Promise((r) => setTimeout(r, delay));
     try {
-      const res = await fetch(`${APPDETAILS}?appids=${row.appid}&filters=basic,metacritic&cc=au`);
+      const res = await fetch(`${APPDETAILS}?appids=${row.appid}&filters=basic,metacritic,release_date&cc=au`);
       // 429 means the window is exhausted: stop and keep what we have rather
       // than hammering, since the rest can be picked up on the next Sync.
       if (res.status === 429) break;
       if (!res.ok) continue;
 
-      const m = (await res.json())?.[row.appid]?.data?.metacritic ?? null;
-      remember.run(row.appid, m?.score ?? null, m?.url ?? null, new Date().toISOString());
+      const data = (await res.json())?.[row.appid]?.data;
+      const m = data?.metacritic ?? null;
+      const now = new Date().toISOString();
+      remember.run(row.appid, m?.score ?? null, m?.url ?? null, releaseYear(data), now, now);
       if (m?.score) found++;
     } catch {
       // A single failed appid is not worth failing a Sync over; it stays
@@ -69,7 +76,7 @@ const PENDING = `SELECT appid, min(pri) AS pri FROM (
            JOIN steam_app a ON a.norm_title = g.norm_title
           WHERE g.store = 'STEAM'
        )
-       WHERE appid NOT IN (SELECT appid FROM steam_rating)
+       WHERE appid NOT IN (SELECT appid FROM steam_rating WHERE year_at IS NOT NULL)
        GROUP BY appid`;
 
 export const pendingCount = (db) =>

@@ -145,6 +145,36 @@ const MIGRATIONS = [
       norm_title TEXT PRIMARY KEY,
       product_id TEXT NOT NULL
     )`),
+  // Who made it. IGDB names the developer for an identified Game; the GeForce
+  // NOW catalogue only ever names a publisher, which is all Discover can show.
+  (db) => {
+    addColumn(db, "game", "studio TEXT");
+    addColumn(db, "gfn_entry", "publisher TEXT");
+  },
+  // Market Lows. Keyed by Steam appid rather than (store, store_id) because
+  // gg.deals' free tier names no store — which is exactly why these cannot go
+  // in catalogue_price and cannot be Store prices (docs/adr/0006).
+  (db) =>
+    db.exec(`CREATE TABLE IF NOT EXISTS market_low (
+      appid             TEXT PRIMARY KEY,
+      currency          TEXT,
+      retail_cents      INTEGER,
+      keyshop_cents     INTEGER,
+      retail_low_cents  INTEGER,
+      keyshop_low_cents INTEGER,
+      title             TEXT,
+      url               TEXT,
+      fetched_at        TEXT NOT NULL
+    )`),
+  // Steam hands the release date back in the same request as the score, so the
+  // year costs nothing extra to collect. `year_at` is the "asked" marker the
+  // score gets for free by having a row at all: every appid already memoised
+  // predates the year, so it re-enters the sweep exactly once, and an appid
+  // Steam gives no date for is stamped and never asked again.
+  (db) => {
+    addColumn(db, "steam_rating", "year INTEGER");
+    addColumn(db, "steam_rating", "year_at TEXT");
+  },
 ];
 
 export function open(path = "data/library.db") {
@@ -173,13 +203,14 @@ const SORTS = {
 
 // Rendering 614 covers inline makes a 560KB page on every navigation, so the
 // grid is capped and the count says so; ?limit=0 renders everything.
-export function listGames(db, { q = "", store = "", gfn = false, all = false, genre = "", sort = "", minScore = 0 } = {}, limit = 240) {
+export function listGames(db, { q = "", store = "", gfn = false, all = false, genre = "", studio = "", sort = "", minScore = 0 } = {}, limit = 240) {
   return db
     .prepare(
       `SELECT g.id,
               g.title,
               g.cover_url,
               g.genres,
+              g.studio,
               g.rating,
               g.rating_source,
               g.rating_url,
@@ -193,13 +224,14 @@ export function listGames(db, { q = "", store = "", gfn = false, all = false, ge
           AND (:q = '' OR g.title LIKE '%' || :q || '%')
           AND (:store = '' OR EXISTS (SELECT 1 FROM entitlement s WHERE s.game_id = g.id AND s.store = :store))
           AND (:genre = '' OR g.genres LIKE '%' || :genre || '%')
+          AND (:studio = '' OR g.studio = :studio)
           AND (:minScore = 0 OR g.rating >= :minScore)
         GROUP BY g.id
        HAVING (:gfn = 0 OR streamable = 1)
         ORDER BY ${SORTS[sort] ?? ""} g.title COLLATE NOCASE
         ${limit > 0 ? `LIMIT ${Number(limit)}` : ""}`,
     )
-    .all({ q, store, gfn: gfn ? 1 : 0, all: all ? 1 : 0, genre, minScore: Number(minScore) || 0 })
+    .all({ q, store, gfn: gfn ? 1 : 0, all: all ? 1 : 0, genre, studio, minScore: Number(minScore) || 0 })
     .map((r) => ({
       ...r,
       streamable: !!r.streamable,
@@ -264,23 +296,35 @@ export function unmatched(db, afterId = 0) {
     .all(afterId);
 }
 
+// Cheapest and biggest-saving sorts put the unpriced titles last: a title with
+// no price is not a bargain, it is an unknown.
+const DISCOVER_SORTS = {
+  discount: "best_discount DESC,",
+  rating: "rating IS NULL, rating DESC,",
+  price: "best_price IS NULL, best_price,",
+  saving: "best_saving DESC,",
+};
+
 // GeForce NOW games you do not own, and where you could buy them. The NVIDIA
 // appid rows are excluded: they are a Steam-only supplement to the same
 // catalogue and would double every Steam entry.
-export function discoverGames(db, { q = "", store = "", sale = false, watch = false, sort = "", genre = "" } = {}, limit = 200) {
+export function discoverGames(db, { q = "", store = "", sale = false, low = false, watch = false, sort = "", genre = "", studio = "", minScore = 0 } = {}, limit = 200) {
   return db
     .prepare(
       `SELECT g.norm_title,
               min(g.title) AS title,
               max(g.image_url) AS cover_url,
               max(g.genres) AS genres,
+              max(g.publisher) AS studio,
               group_concat(DISTINCT g.store) AS stores,
               EXISTS (SELECT 1 FROM watchlist w WHERE w.norm_title = g.norm_title) AS watched,
               ${PRICE_COLUMNS},
-              ${RATING_COLUMNS}
+              ${RATING_COLUMNS},
+              ${AT_RETAIL_LOW}
          FROM gfn_entry g
          ${PRICE_JOINS}
          ${RATING_JOIN}
+         ${MARKET_JOIN}
         WHERE g.steam_appid IS NULL
           AND g.store IS NOT NULL
           AND g.store NOT IN ('NONE', 'UNKNOWN')
@@ -290,12 +334,15 @@ export function discoverGames(db, { q = "", store = "", sale = false, watch = fa
           AND (:store = '' OR EXISTS (SELECT 1 FROM gfn_entry s WHERE s.norm_title = g.norm_title AND s.store = :store))
           AND (:watch = 0 OR g.norm_title IN (SELECT norm_title FROM watchlist))
           AND (:genre = '' OR EXISTS (SELECT 1 FROM gfn_entry n WHERE n.norm_title = g.norm_title AND n.genres LIKE '%' || :genre || '%'))
+          AND (:studio = '' OR EXISTS (SELECT 1 FROM gfn_entry u WHERE u.norm_title = g.norm_title AND u.publisher = :studio))
         GROUP BY g.norm_title
        HAVING (:sale = 0 OR best_discount > 0)
-        ORDER BY ${sort === "discount" ? "best_discount IS NULL, best_discount DESC," : ""} min(g.title) COLLATE NOCASE
+          AND (:low = 0 OR at_retail_low)
+          AND (:minScore = 0 OR rating >= :minScore)
+        ORDER BY ${DISCOVER_SORTS[sort] ?? ""} min(g.title) COLLATE NOCASE
         ${limit > 0 ? `LIMIT ${limit}` : ""}`,
     )
-    .all({ q, store, sale: sale ? 1 : 0, watch: watch ? 1 : 0, genre })
+    .all({ q, store, sale: sale ? 1 : 0, low: low ? 1 : 0, watch: watch ? 1 : 0, genre, studio, minScore: Number(minScore) || 0 })
     .map(withPrices);
 }
 
@@ -303,6 +350,12 @@ export function discoverGames(db, { q = "", store = "", sale = false, watch = fa
 // under. Support is per-Entitlement (docs/adr/0003): buying it on GOG when only
 // the Steam variant streams would be a purchase that does not stream, so the
 // cheaper price of a Store you cannot stream from is worse than no price.
+
+// With a Store filter on, the deal signals must answer the question the filter
+// asks: "on sale" and the deal sorts mean on sale at *that* Store. A Steam
+// discount surfacing under an Xbox filter is a sale you cannot take — the same
+// mistake sells() prevents across GeForce NOW, one level in.
+const picked = (catalogueStore, col) => `CASE WHEN :store IN ('', '${catalogueStore}') THEN ${col} END`;
 
 // sp/gp join on norm_title, so their columns are identical across every row of
 // a group — a bare aggregate over them picks the one value there is.
@@ -312,8 +365,12 @@ const PRICE_COLUMNS = `max(sp.formatted) AS steam_price,
               max(gp.discount_percent) AS gog_discount,
               max(xp.formatted) AS xbox_price,
               max(xp.discount_percent) AS xbox_discount,
-              max(coalesce(sp.discount_percent, 0), coalesce(gp.discount_percent, 0),
-                  coalesce(xp.discount_percent, 0)) AS best_discount`;
+              max(coalesce(${picked("STEAM", "sp.discount_percent")}, 0), coalesce(${picked("GOG", "gp.discount_percent")}, 0),
+                  coalesce(${picked("XBOX", "xp.discount_percent")}, 0)) AS best_discount,
+              nullif(min(coalesce(${picked("STEAM", "sp.final_cents")}, 1e15), coalesce(${picked("GOG", "gp.final_cents")}, 1e15),
+                         coalesce(${picked("XBOX", "xp.final_cents")}, 1e15)), 1e15) AS best_price,
+              max(coalesce(${picked("STEAM", "sp.initial_cents - sp.final_cents")}, 0), coalesce(${picked("GOG", "gp.initial_cents - gp.final_cents")}, 0),
+                  coalesce(${picked("XBOX", "xp.initial_cents - xp.final_cents")}, 0)) AS best_saving`;
 
 // The `sells` clause is what keeps a price tied to a Store you could actually
 // stream from. Without it a GOG sale leaks into best_discount and badges a
@@ -333,10 +390,45 @@ const PRICE_JOINS = `LEFT JOIN steam_app a ON a.norm_title = g.norm_title AND ${
 // not of the Store you would buy it from, so the Steam score stands even for a
 // title GeForce NOW lists under GOG alone. Contrast PRICE_JOINS above.
 const RATING_COLUMNS = `max(r.score) AS rating,
-              max(r.url) AS rating_url`;
+              max(r.url) AS rating_url,
+              max(r.year) AS year`;
 
 const RATING_JOIN = `LEFT JOIN steam_app ra ON ra.norm_title = g.norm_title
          LEFT JOIN steam_rating r ON r.appid = ra.appid`;
+
+// The Market Low: cheapest anywhere and its all-time low, from gg.deals. Like
+// the rating and unlike the prices above it is NOT gated by sells(), because it
+// names no Store — and for the same reason it must never be badged as a
+// discount on a store row or folded into best_discount (docs/adr/0006). The
+// appid comes from the title→appid table, or from GeForce NOW's own NVIDIA rows
+// for a title the resolver dropped as ambiguous.
+const MARKET_COLUMNS = `max(ml.retail_cents) AS market_retail,
+              max(ml.keyshop_cents) AS market_keyshop,
+              max(ml.retail_low_cents) AS market_retail_low,
+              max(ml.keyshop_low_cents) AS market_keyshop_low,
+              max(ml.currency) AS market_currency,
+              max(ml.url) AS market_url`;
+
+// The one thing about a Market Low the grid may carry: whether the retail
+// cheapest-anywhere is sitting at its all-time low. A boolean, not a figure —
+// the grid has nowhere to put gg.deals' attribution link, and the panel does.
+// gg.deals reports the current price *as* the historical low when the current
+// price is the low, so equality is the signal. Retail only: a keyshop is a
+// reseller of keys, its low is noisier, and it is not a Store price at all
+// (docs/adr/0006).
+//
+// A title this app can price nowhere is not marked, however low gg.deals says
+// the market is: there is no price on the tile for the mark to be a claim
+// about, and nothing to buy at it. The test is any store price, not the
+// filtered `best_price` — the store filter must not decide whether a storeless
+// figure counts.
+const AT_RETAIL_LOW = `(max(ml.retail_cents) IS NOT NULL
+                AND max(ml.retail_cents) <= max(ml.retail_low_cents)
+                AND coalesce(max(sp.formatted), max(gp.formatted), max(xp.formatted)) IS NOT NULL) AS at_retail_low`;
+
+const MARKET_JOIN = `LEFT JOIN steam_app ma ON ma.norm_title = g.norm_title
+         LEFT JOIN gfn_entry mn ON mn.norm_title = g.norm_title AND mn.steam_appid IS NOT NULL
+         LEFT JOIN market_low ml ON ml.appid = coalesce(ma.appid, mn.steam_appid)`;
 
 function withPrices(r) {
   const prices = [
@@ -348,6 +440,20 @@ function withPrices(r) {
     ...r,
     stores: r.stores.split(",").sort(),
     prices,
+    // Deliberately its own field and not a member of `prices`: nothing that
+    // renders a store row may reach it (docs/adr/0006).
+    market:
+      r.market_retail != null || r.market_keyshop != null
+        ? {
+            retail: r.market_retail,
+            keyshop: r.market_keyshop,
+            retail_low: r.market_retail_low,
+            keyshop_low: r.market_keyshop_low,
+            currency: r.market_currency,
+            url: r.market_url,
+          }
+        : null,
+    at_retail_low: !!r.at_retail_low,
     best_discount: r.best_discount || null,
     watched: !!r.watched,
   };
@@ -377,6 +483,11 @@ export const priceCounts = (db) => ({
   apps: db.prepare("SELECT count(*) c FROM steam_app").get().c,
   products: db.prepare("SELECT count(*) c FROM gog_app").get().c,
   titles: db.prepare("SELECT count(*) c FROM xbox_app").get().c,
+  market: {
+    fetched: db.prepare("SELECT max(fetched_at) t FROM market_low").get().t,
+    priced: db.prepare("SELECT count(*) c FROM market_low WHERE retail_cents IS NOT NULL OR keyshop_cents IS NOT NULL").get().c,
+    asked: db.prepare("SELECT count(*) c FROM market_low").get().c,
+  },
   ...Object.fromEntries(
     ["steam", "gog", "xbox"].map((store) => [
       store,
@@ -397,17 +508,21 @@ export function discoverDetail(db, normTitle) {
               min(g.title) AS title,
               max(g.image_url) AS cover_url,
               max(g.genres) AS genres,
+              max(g.publisher) AS studio,
               group_concat(DISTINCT g.store) AS stores,
               EXISTS (SELECT 1 FROM watchlist w WHERE w.norm_title = g.norm_title) AS watched,
               ${PRICE_COLUMNS},
-              ${RATING_COLUMNS}
+              ${RATING_COLUMNS},
+              ${MARKET_COLUMNS},
+              ${AT_RETAIL_LOW}
          FROM gfn_entry g
          ${PRICE_JOINS}
          ${RATING_JOIN}
-        WHERE g.norm_title = ?
+         ${MARKET_JOIN}
+        WHERE g.norm_title = :title
         GROUP BY g.norm_title`,
     )
-    .get(String(normTitle));
+    .get({ title: String(normTitle), store: "" });
   return row ? withPrices(row) : null;
 }
 
@@ -418,7 +533,9 @@ const DEFAULT_STALE_DAYS = 30;
 
 export function staleSources(db, now = Date.now()) {
   return db
-    .prepare("SELECT store, status, last_synced_at FROM store_credential WHERE store <> 'igdb'")
+    // igdb and ggdeals are credentials for services, not Stores with a Sync:
+    // nothing ever stamps last_synced_at on them, so they are never stale.
+    .prepare("SELECT store, status, last_synced_at FROM store_credential WHERE store NOT IN ('igdb', 'ggdeals')")
     .all()
     .map((row) => {
       const days = row.last_synced_at ? (now - Date.parse(row.last_synced_at)) / 86_400_000 : Infinity;
@@ -434,6 +551,15 @@ export function genreList(db, table = "game") {
     for (const g of r.genres.split(",")) seen.add(g.trim());
   }
   return [...seen].filter(Boolean).sort();
+}
+
+// Studios are single values, unlike the comma-separated genres above.
+export function studioList(db, table = "game") {
+  const column = table === "gfn_entry" ? "publisher" : "studio";
+  return db
+    .prepare(`SELECT DISTINCT ${column} AS s FROM ${table === "gfn_entry" ? "gfn_entry" : "game"} WHERE ${column} IS NOT NULL AND ${column} <> '' ORDER BY s COLLATE NOCASE`)
+    .all()
+    .map((r) => r.s);
 }
 
 export const ratingCounts = (db) => ({

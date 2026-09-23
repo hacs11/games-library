@@ -166,7 +166,7 @@ export async function artwork(db, igdbIds) {
     const rows = await query(
       db,
       "games",
-      `fields id,cover.image_id,genres.name,first_release_date; where id = (${batch.join(",")}); limit 500;`,
+      `fields id,cover.image_id,genres.name,first_release_date,involved_companies.developer,involved_companies.company.name; where id = (${batch.join(",")}); limit 500;`,
     );
     for (const r of rows) {
       art.set(r.id, {
@@ -175,6 +175,12 @@ export async function artwork(db, igdbIds) {
           : null,
         genres: (r.genres ?? []).map((g) => g.name).join(", ") || null,
         year: r.first_release_date ? new Date(r.first_release_date * 1000).getUTCFullYear() : null,
+        // The developer is the studio; a game with none named falls back to
+        // whoever else was involved rather than showing nothing.
+        studio:
+          (r.involved_companies ?? []).find((c) => c.developer)?.company?.name ??
+          r.involved_companies?.[0]?.company?.name ??
+          null,
       });
     }
     await pause();

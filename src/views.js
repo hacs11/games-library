@@ -116,6 +116,9 @@ export const layout = (title, body, { path = "/", pending = 0, panel = "" } = {}
   .gfn-toggle.on { border-color: #5d8a2c; color: #a3d95a; background: #1d2a14; }
   .score-range { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: color-mix(in srgb, var(--color-text) 62%, transparent); }
   .score-range input[type=range] { width: 92px; accent-color: var(--color-accent); }
+  /* The readout changes text on every drag step ("any", "5", "95"). Without a
+     floor it resizes the flex row and every filter after it twitches. */
+  .score-range output { display: inline-block; min-width: 3.5ch; text-align: left; font-variant-numeric: tabular-nums; }
   .seg { margin-left: auto; }
   .seg-link {
     display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 7px 12px;
@@ -147,10 +150,20 @@ export const layout = (title, body, { path = "/", pending = 0, panel = "" } = {}
   /* Discover tiles are Library tiles with a star over the cover and a discount
      where the score sits. */
   .tile-wrap { position: relative; }
+  /* Two signals can land in the same corner — a discount at this store and a
+     cheapest-anywhere at its all-time low — so the corner is a row, not a
+     slot. */
+  .deal-stack { position: absolute; bottom: 7px; right: 7px; display: flex; gap: 4px; }
   .deal-badge {
-    position: absolute; bottom: 7px; right: 7px; padding: 2px 6px; border-radius: 6px;
+    padding: 2px 6px; border-radius: 6px;
     font-size: 10px; font-variant-numeric: tabular-nums;
     background: var(--color-accent-800); color: var(--color-accent-100);
+  }
+  /* Inverted rather than accented: the Market Low names no Store, so it must
+     not read as the store discount beside it (docs/adr/0006). */
+  .low-badge {
+    padding: 2px 6px; border-radius: 6px; font-size: 10px; letter-spacing: 0.04em;
+    background: var(--color-neutral-100); color: var(--color-bg);
   }
   .tile-title { font-size: 13px; line-height: 1.3; text-wrap: pretty; }
   .tile-genres { font-size: 11px; color: color-mix(in srgb, var(--color-text) 45%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -197,9 +210,9 @@ export const layout = (title, body, { path = "/", pending = 0, panel = "" } = {}
   .stale { border-radius: 8px; padding: 10px 14px; margin-bottom: 18px; font-size: 13px; background: var(--color-accent-900); color: var(--color-accent-200); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   form.inline { display: inline; }
 
-  /* Opening a panel is a full navigation. Chrome holds the new document's
-     first paint until the transition is ready, so the list no longer paints at
-     the top and jumps once the scroll is restored — it cross-fades in place. */
+  /* A filter or a POST's 303 is a full navigation. Chrome holds the new
+     document's first paint until the transition is ready, so the list does not
+     paint at the top and jump once the scroll is restored — it cross-fades. */
   @view-transition { navigation: auto; }
   @media (prefers-reduced-motion: reduce) {
     ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
@@ -225,14 +238,35 @@ ${panel}
   const panel = document.querySelector(".panel");
   if (panel) (panel.querySelector("[data-close]") ?? panel).focus?.();
 
-  // Opening or closing a panel is a real navigation, so the list would come
-  // back at the top. Park the scroll position under the URL being navigated to
-  // and put it back on arrival there — only for the links that mean "same list,
-  // panel toggled", so applying a filter still starts at the top.
   addEventListener("click", (e) => {
     const link = e.target.closest?.("a[data-keep-scroll]");
-    if (link) sessionStorage.setItem(link.href, scrollY);
+    if (!link || e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
+    // Opening or closing a panel swaps only the panel: the list, its scroll and
+    // its images stay put. The URL still changes, so it stays linkable and the
+    // back button still closes it.
+    e.preventDefault();
+    history.pushState(null, "", link.href);
+    showPanel(link.hasAttribute("data-close") || link.classList.contains("scrim") ? "" : null);
   });
+  addEventListener("popstate", () => showPanel(null));
+  let opener;
+  async function showPanel(markup) {
+    const url = location.href;
+    if (markup === null) {
+      markup = await fetch(url, { headers: { "x-panel": "1" } }).then((r) => r.text()).catch(() => location.reload());
+      if (markup === undefined || url !== location.href) return;  // reloading, or clicked on before this arrived
+    }
+    document.querySelectorAll(".scrim, .panel").forEach((el) => el.remove());
+    document.body.insertAdjacentHTML("beforeend", markup);
+    const panel = document.querySelector(".panel");
+    if (panel) {
+      opener ??= document.activeElement;
+      panel.querySelector("[data-close]").focus();
+    } else {
+      opener?.focus({ preventScroll: true });
+      opener = null;
+    }
+  }
   // Every POST here 303s back to a list: to its own back URL where it carries
   // one (starring), otherwise to the page the form is on (Connect's buttons).
   addEventListener("submit", (e) => {
@@ -290,6 +324,19 @@ const coverArt = (g, cls = "cover", mono = 30) =>
         }`
   }`;
 
+// Score ≥ N, shared by Library and Discover. `<output>` is the element the
+// platform provides for exactly this, so the live number needs no script block
+// and no id lookup — just the one handler the range fires as it is dragged.
+// The value still only filters on Apply; this is the readout, not the filter.
+const scoreRange = (minScore) => {
+  const v = Number(minScore) || 0;
+  return `<span class="score-range">
+    <span>Score ≥ <output>${v || "any"}</output></span>
+    <input type="range" name="minScore" min="0" max="95" step="5" value="${v}"
+           oninput="this.closest('.score-range').querySelector('output').value = this.value === '0' ? 'any' : this.value">
+  </span>`;
+};
+
 const scoreTitle = (g) =>
   g.rating_source === "metacritic"
     ? `Metacritic ${g.rating}`
@@ -306,8 +353,20 @@ const qs = (f, extra = {}) => {
   return s ? `?${s}` : "";
 };
 
+// A studio list runs to hundreds of names, which is unreadable as a <select>.
+// A datalist is the same markup cost but types ahead, and an unknown name just
+// matches nothing.
+const studioFilter = (studios, value = "") => `
+  <input class="input" name="studio" list="studios" placeholder="Any studio" style="min-width:150px" value="${esc(value)}">
+  <datalist id="studios">${studios.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>`;
+
+// Every filter's default is "unset", so clearing them is just the bare path.
+// `view` is a display preference, not a filter, and survives the reset.
+const clearLink = (path, filters, keep = {}) =>
+  qs({ ...filters, ...keep, view: "" }) ? `<a class="gfn-toggle" href="${path}${qs(keep)}">Clear filters</a>` : "";
+
 export const listPage = (games, filters = {}, opts = {}) => {
-  const { hidden = 0, stale = [], genres = [], total = 0, view = "grid", matching = 0 } = opts;
+  const { hidden = 0, stale = [], genres = [], studios = [], total = 0, view = "grid", matching = 0 } = opts;
   return `
 ${staleBanner(stale)}
 ${title("Library", {
@@ -331,6 +390,7 @@ ${title("Library", {
     <option value="">All genres</option>
     ${genres.map((g) => `<option value="${esc(g)}"${filters.genre === g ? " selected" : ""}>${esc(g)}</option>`).join("")}
   </select>
+  ${studioFilter(studios, filters.studio)}
   <select class="input" name="sort" style="min-width:124px">
     <option value="">A–Z</option>
     <option value="rating"${filters.sort === "rating" ? " selected" : ""}>Highest score</option>
@@ -339,12 +399,10 @@ ${title("Library", {
   <a class="gfn-toggle${filters.gfn ? " on" : ""}" href="/${qs(filters, { gfn: !filters.gfn, view: "" })}">
     ${icon("lightning", 14)} GeForce NOW only
   </a>
-  <span class="score-range">
-    Score ≥ ${filters.minScore ? filters.minScore : "any"}
-    <input type="range" name="minScore" min="0" max="95" step="5" value="${Number(filters.minScore) || 0}">
-  </span>
+  ${scoreRange(filters.minScore)}
   ${filters.all || hidden ? `<label style="font-size:12px" class="muted"><input type="checkbox" name="all" value="1"${filters.all ? " checked" : ""}> ${hidden} hidden</label>` : ""}
   <button class="btn btn-secondary">Apply</button>
+  ${clearLink("/", filters, { view })}
   <span class="seg">
     <a class="seg-link${view === "grid" ? " on" : ""}" href="/${qs(filters, { view: "grid" })}">${icon("grid", 14)} Grid</a>
     <a class="seg-link${view === "rows" ? " on" : ""}" href="/${qs(filters, { view: "rows" })}">${icon("rows", 14)} Rows</a>
@@ -406,7 +464,7 @@ ${games
 export const detailPanel = (game, closeHref) => {
   if (!game) return "";
   const streamable = game.entitlements.filter((e) => e.gfn_status === "AVAILABLE");
-  const meta = [game.year, game.rating != null ? `${game.rating} score` : "No score", hours(game.playtime_minutes)];
+  const meta = [game.studio, game.year, game.rating != null ? `${game.rating} score` : "No score", hours(game.playtime_minutes)];
   return `
 <a class="scrim" data-keep-scroll href="${esc(closeHref)}" aria-label="Close"></a>
 <aside class="panel" role="dialog" aria-modal="true" aria-label="${esc(game.title)}">
@@ -546,11 +604,12 @@ const starForm = (item, back, attrs = "") => `<form class="inline" method="post"
 // The Stores whose own catalogue we can read a price out of.
 const PRICE_STORES = ["steam", "gog", "xbox"];
 
-export const discoverPage = (games, filters = {}, total = 0, watching = 0, genres = []) => `
+export const discoverPage = (games, filters = {}, total = 0, watching = 0, genres = [], studios = []) => `
 ${title("Discover", {
   count: `${total} titles`,
   intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's, GOG's and Xbox's, in AUD.",
 })}
+<p class="intro" style="margin:-8px 0 14px">An <span class="low-badge">ATL</span> mark means the cheapest retail price anywhere is at its all-time low — which store that is is not published, so check it streams. All-time lows by <a href="https://gg.deals/" target="_blank" rel="noopener">gg.deals</a>.</p>
 <form class="filters" method="get" action="/discover">
   <span class="search-wrap">
     ${icon("search", 15)}
@@ -569,13 +628,22 @@ ${title("Discover", {
     <option value="">All genres</option>
     ${genres.map((g) => `<option value="${esc(g)}"${filters.genre === g ? " selected" : ""}>${esc(g)}</option>`).join("")}
   </select>
+  ${studioFilter(studios, filters.studio)}
   <select class="input" name="sort" style="min-width:150px">
     <option value="">A–Z</option>
     <option value="discount"${filters.sort === "discount" ? " selected" : ""}>Biggest discount</option>
+    <option value="saving"${filters.sort === "saving" ? " selected" : ""}>Biggest saving</option>
+    <option value="price"${filters.sort === "price" ? " selected" : ""}>Price: low to high</option>
+    <option value="rating"${filters.sort === "rating" ? " selected" : ""}>Highest score</option>
   </select>
+  ${scoreRange(filters.minScore)}
   <button class="btn btn-secondary">Apply</button>
+  ${clearLink("/discover", filters)}
   <a class="gfn-toggle${filters.sale ? " on" : ""}" href="/discover${qs({ ...filters, sale: !filters.sale })}"
      style="${filters.sale ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">On sale only</a>
+  <a class="gfn-toggle${filters.low ? " on" : ""}" href="/discover${qs({ ...filters, low: !filters.low })}"
+     style="${filters.low ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}"
+     title="Retail cheapest-anywhere is at its all-time low. Not tied to a store — gg.deals' free tier names none.">At all-time low</a>
   <a class="gfn-toggle${filters.watch ? " on" : ""}" href="/discover${qs({ ...filters, watch: !filters.watch })}"
      style="${filters.watch ? "border-color:var(--color-accent);color:var(--color-accent);background:var(--color-accent-900)" : ""}">${icon(filters.watch ? "star" : "star-outline", 12)} Watchlist${watching ? ` (${watching})` : ""}</a>
 </form>
@@ -597,7 +665,10 @@ ${starForm(g, `/discover${qs(filters)}`, ` style="position:absolute;top:7px;left
   ${coverArt(g)}
     <span class="gfn-badge" title="In the GeForce NOW catalogue">${icon("lightning", 9)}GFN</span>
     ${g.rating != null ? `<span class="score-badge" style="right:auto;left:7px" title="Metacritic ${g.rating}">${g.rating}</span>` : ""}
-    ${g.best_discount > 0 ? `<span class="deal-badge" title="Best discount across the stores selling it">−${g.best_discount}%</span>` : ""}
+    <span class="deal-stack">
+      ${g.at_retail_low ? `<span class="low-badge" title="Cheapest retail price anywhere is at its all-time low — gg.deals does not say which store, so check it streams">ATL</span>` : ""}
+      ${g.best_discount > 0 ? `<span class="deal-badge" title="Best discount across the stores selling it">−${g.best_discount}%</span>` : ""}
+    </span>
   </div>
   <span class="tile-title">${esc(g.title)}</span>
   <span class="tile-genres">${esc((g.genres ?? "").split(", ").slice(0, 3).join(", "))}</span>
@@ -607,6 +678,11 @@ ${starForm(g, `/discover${qs(filters)}`, ` style="position:absolute;top:7px;left
     .join("")}</span>
 </a></div>`;
 
+// Market Lows are stored as cents and a currency code, unlike a Store price,
+// which arrives already formatted by the Store itself.
+const money = (c, currency = "AUD") =>
+  c == null ? null : `${currency === "AUD" ? "A$" : `${currency} `}${(c / 100).toFixed(2)}`;
+
 const priceTags = (prices = []) =>
   prices
     .map(
@@ -615,6 +691,36 @@ const priceTags = (prices = []) =>
       )}">${storeMark(p.store, 10)} ${esc(p.formatted)}</span>`,
     )
     .join("");
+
+// Cheapest anywhere, from gg.deals — a figure of its own, below the store rows
+// and never inside one, because the free tier does not say which store it came
+// from and a price with no store cannot be the one that streams (docs/adr/0006,
+// and docs/adr/0003 for why that matters). The link is also the attribution
+// gg.deals requires wherever its data is shown.
+const marketLow = (item) => {
+  const m = item.market;
+  if (!m) return "";
+  // Only Retail carries the ATL mark, and only on the same terms the tile's
+  // does — `at_retail_low`, not a comparison of its own, so the panel cannot
+  // say ATL about a title the grid does not mark.
+  const row = (label, now, low, hint, mark = false) =>
+    now == null
+      ? ""
+      : `<div class="own-row">
+    <span class="own-mark"></span>
+    <span style="font-size:13px" title="${esc(hint)}">${label}</span>
+    <span class="own-detail" style="font-variant-numeric:tabular-nums">${esc(money(now, m.currency))}${
+      low == null ? "" : ` <span class="muted">· low ${esc(money(low, m.currency))}</span>`
+    }${mark && item.at_retail_low ? ` <span class="low-badge">ATL</span>` : ""}</span>
+  </div>`;
+  return `
+  <h6 style="margin-top:20px">Cheapest anywhere</h6>
+  ${row("Retail", m.retail, m.retail_low, "Lowest official store price gg.deals can see, and its all-time low", true)}
+  ${row("Keyshop", m.keyshop, m.keyshop_low, "Lowest keyshop price — a reseller of keys, not a store that grants an entitlement")}
+  <p class="muted" style="font-size:11px;margin:10px 0 0">Which store this is from is not published on the free tier, so it is not a price for any row above — check it streams before buying. Prices by <a href="${esc(
+    m.url ?? "https://gg.deals/",
+  )}" target="_blank" rel="noopener">gg.deals</a>.</p>`;
+};
 
 // The Discover panel is keyed by normalised title, not a Game id: these are
 // catalogue entries you do not own, so there is no Game row behind them.
@@ -631,7 +737,7 @@ export const discoverPanel = (item, closeHref) => {
       : `<span class="cover-mono" style="font-size:26px">${esc(initials(item.title))}</span>`
   }</div>
   <h3>${esc(item.title)}</h3>
-  <div class="panel-meta">Not owned${
+  <div class="panel-meta">${[item.studio, item.year].filter(Boolean).map((v) => `${esc(String(v))} · `).join("")}Not owned${
     item.rating != null
       ? ` · ${item.rating_url ? `<a href="${esc(item.rating_url)}" target="_blank" rel="noopener">${item.rating} Metacritic</a>` : `${item.rating} Metacritic`}`
       : ""
@@ -663,6 +769,7 @@ export const discoverPanel = (item, closeHref) => {
       ? `<p class="muted" style="font-size:11px;margin:10px 0 0">Only Steam, GOG and Xbox publish prices we can read. The rest stream all the same.</p>`
       : ""
   }
+  ${marketLow(item)}
   <h6 style="margin-top:20px">GeForce NOW</h6>
   <div class="gfn-row">
     <span style="color:#a3d95a">${icon("lightning", 15)}</span>
@@ -865,14 +972,22 @@ ${connectCard({
     last_synced_at: counts.prices?.fetched,
   },
   counts: PRICE_STORES.some((s) => counts.prices?.[s]?.priced)
-    ? PRICE_STORES
-        .map((s) => `${STORE_NAMES[s]} ${counts.prices[s].priced} priced · ${counts.prices[s].onSale} on sale`)
+    ? [
+        ...PRICE_STORES.map((s) => `${STORE_NAMES[s]} ${counts.prices[s].priced} priced · ${counts.prices[s].onSale} on sale`),
+        counts.prices?.market?.priced ? `gg.deals ${counts.prices.market.priced} market lows` : "",
+      ]
+        .filter(Boolean)
         .join(" — ")
     : "not fetched yet",
   action: running.prices
     ? jobBar("prices", running.prices)
     : `<form class="inline" method="post" action="/prices"><button class="btn btn-secondary" style="font-size:12px">Refresh prices</button></form>`,
-  body: `<p class="intro" style="margin:0">Steam, GOG and Xbox prices in AUD for the Discover catalogue, resolved by title against each store's own catalogue. Xbox covers Play Anywhere titles only, the same rule your Xbox library follows. Epic publishes a list price but no discount, so its titles show no price. Takes a couple of minutes.</p>`,
+  body: `<p class="intro" style="margin:0 0 10px">Steam, GOG and Xbox prices in AUD for the Discover catalogue, resolved by title against each store's own catalogue. Xbox covers Play Anywhere titles only, the same rule your Xbox library follows. Epic publishes a list price but no discount, so its titles show no price. Takes a couple of minutes.</p>
+  <form method="post" action="/connect/ggdeals">
+    <p class="intro" style="margin:0 0 8px">A <a href="https://gg.deals/api/" target="_blank" rel="noopener">gg.deals</a> key adds a market low — cheapest anywhere and its all-time low — to the detail panel, including for titles no store here prices. It names no store, so it is never one of the store prices above. Free for personal use; generate a key in your gg.deals settings.</p>
+    ${secretField("gg.deals API key", "key", data("ggdeals").key, "password")}
+    <button class="btn btn-primary" style="font-size:12px">Save</button>
+  </form>`,
 })}
 ${connectCard({
   store: "igdb",

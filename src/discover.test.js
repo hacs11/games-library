@@ -148,3 +148,26 @@ test("the score sweep asks for owned appids before the catalogue's", async () =>
   assert.deepEqual(asked, ["620", "9999"]);
   assert.equal(pendingCount(db), 0);
 });
+
+// The score filter matches the Library's, and reaches the same Metacritic score
+// the catalogue rows already carry (not gated by sells(), docs/adr/0003).
+test("Discover filters by minimum score, and keeps the unrated out", () => {
+  const db = open(":memory:");
+  db.exec(`
+    INSERT INTO gfn_entry (title, norm_title, store, status) VALUES
+      ('Acclaimed', 'acclaimed', 'STEAM', 'AVAILABLE'),
+      ('Middling', 'middling', 'STEAM', 'AVAILABLE'),
+      ('Unrated', 'unrated', 'STEAM', 'AVAILABLE');
+    INSERT INTO steam_app (norm_title, appid) VALUES ('acclaimed', '1'), ('middling', '2'), ('unrated', '3');
+    INSERT INTO steam_rating (appid, score, fetched_at) VALUES ('1', 96, 'now'), ('2', 64, 'now'), ('3', NULL, 'now');
+  `);
+
+  assert.deepEqual(discoverGames(db, { minScore: 0 }).map((g) => g.title), ["Acclaimed", "Middling", "Unrated"]);
+  assert.deepEqual(discoverGames(db, { minScore: 90 }).map((g) => g.title), ["Acclaimed"]);
+  assert.deepEqual(
+    discoverGames(db, { minScore: 60 }).map((g) => g.title),
+    ["Acclaimed", "Middling"],
+    "a title with no score is not a title scoring zero",
+  );
+  assert.equal(discoverCount(db, { minScore: 90 }), 1);
+});

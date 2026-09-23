@@ -167,10 +167,10 @@ export async function enrichGames(db, fetchArtwork) {
   if (identified.length > 0) {
     try {
       const art = await fetchArtwork(db, identified.map((g) => g.igdb_id));
-      const set = db.prepare("UPDATE game SET cover_url = ?, genres = ?, year = ? WHERE id = ?");
+      const set = db.prepare("UPDATE game SET cover_url = ?, genres = ?, year = ?, studio = ? WHERE id = ?");
       for (const g of identified) {
         const hit = art.get(g.igdb_id);
-        if (hit) set.run(hit.cover_url, hit.genres, hit.year ?? null, g.id);
+        if (hit) set.run(hit.cover_url, hit.genres, hit.year ?? null, hit.studio ?? null, g.id);
       }
     } catch (err) {
       // Art is decoration; a failure here must not fail a Sync.
@@ -181,8 +181,9 @@ export async function enrichGames(db, fetchArtwork) {
   db.exec(`
     UPDATE game SET
       cover_url = coalesce(cover_url, (SELECT image_url FROM gfn_entry WHERE norm_title = game.norm_title AND image_url IS NOT NULL LIMIT 1)),
-      genres    = coalesce(genres,    (SELECT genres    FROM gfn_entry WHERE norm_title = game.norm_title AND genres    IS NOT NULL LIMIT 1))
-    WHERE cover_url IS NULL OR genres IS NULL
+      genres    = coalesce(genres,    (SELECT genres    FROM gfn_entry WHERE norm_title = game.norm_title AND genres    IS NOT NULL LIMIT 1)),
+      studio    = coalesce(studio,    (SELECT publisher FROM gfn_entry WHERE norm_title = game.norm_title AND publisher IS NOT NULL LIMIT 1))
+    WHERE cover_url IS NULL OR genres IS NULL OR studio IS NULL
   `);
 
   return db.prepare("SELECT count(*) c FROM game WHERE cover_url IS NOT NULL").get().c;

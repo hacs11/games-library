@@ -37,8 +37,8 @@ export async function syncGfn(db) {
   // Only replace the catalogue once the whole thing is in hand: a fetch that
   // dies halfway must not leave a truncated list behind.
   const insert = db.prepare(
-    `INSERT INTO gfn_entry (gfn_id, title, norm_title, store, steam_appid, status, image_url, genres)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO gfn_entry (gfn_id, title, norm_title, store, steam_appid, status, image_url, genres, publisher)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   // Pentanet's genres are SCREAMING_SNAKE; store them the way they will be read.
   const readable = (g) =>
@@ -58,6 +58,9 @@ export async function syncGfn(db) {
         insert.run(
           v.id ?? null, title, normaliseTitle(title), v.appStore ?? null, null, "AVAILABLE",
           g.images?.KEY_ART ?? null, readable(g.genres) || null,
+          // Pentanet names a publisher, never a developer — Discover has no
+          // identified Game behind it to ask IGDB about.
+          g.publisherName?.trim() || null,
         );
         n++;
       }
@@ -71,7 +74,7 @@ export async function syncGfn(db) {
     for (const e of await res.json()) {
       const appid = e.steamUrl?.match(/\/app\/(\d+)/)?.[1];
       if (!appid || e.store !== "Steam") continue;
-      insert.run(null, e.title.trim(), normaliseTitle(e.title), "STEAM", appid, e.status ?? "AVAILABLE", null, null);
+      insert.run(null, e.title.trim(), normaliseTitle(e.title), "STEAM", appid, e.status ?? "AVAILABLE", null, null, e.publisher ?? null);
       appids++;
     }
   } catch (err) {

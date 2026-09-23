@@ -17,21 +17,24 @@ Writing to `data/library.db` from the host while the container is up corrupts th
 
 ## Domain language
 
-`CONTEXT.md` defines the vocabulary — Game, Entitlement, Store, Sync, Connection, Play Anywhere, Unmatched Entitlement — with the words to avoid for each. Use these names in code, comments, commit messages and UI copy.
+`CONTEXT.md` defines the vocabulary — Game, Entitlement, Store, Sync, Connection, Play Anywhere, Unmatched Entitlement, Market Low, Keyshop — with the words to avoid for each. Use these names in code, comments, commit messages and UI copy.
 
-`docs/adr/` holds five decisions that most changes will touch. Read the relevant one before working against it:
+`docs/adr/` holds six decisions that most changes will touch. Read the relevant one before working against it:
 
 - **0001** Games are inferred by matching Entitlements against IGDB, never reported by a Store.
 - **0002** Xbox Entitlements are typed by hand, Play Anywhere only.
 - **0003** GeForce NOW support belongs to an *Entitlement*, not a Game.
 - **0004** Compose-only, every credential in SQLite, entered through the Connect page.
 - **0005** Epic stays unpriced: Cloudflare means a browser, and a browser is not worth 2.2% of the catalogue.
+- **0006** gg.deals is a Market Low beside the per-store prices, never one of them — its free tier names no store.
 
 ## Architecture
 
 **Entitlement → Game.** `sync.js` fetches a Store's Entitlements, upserts them with `game_id` left null, then hands over to `match.js` — which owns Game assignment, IGDB identification, artwork, genres and ratings, in that order. Each Store syncs alone: a failure marks that Store's credential and leaves every other Store untouched. Entitlements that stop appearing are never deleted.
 
 **ADR-0003 governs anything per-store.** The `sells()` clause in `db.js` exists because of it: a price is only shown for a Store that GeForce NOW actually lists that title under. Without it a GOG sale badges a Steam-only title −95% next to Steam's full price — this happened. Any new per-store attribute needs the same treatment.
+
+The filters must agree with each other, too. `picked()` narrows `best_discount`/`best_price`/`best_saving` to the Store the Discover filter names, so "on sale" and the deal sorts mean on sale *at that Store* — an Xbox filter surfacing a Steam discount offers a sale that cannot be taken. The rating and the Market Low are deliberately **not** gated by either clause: a score and a storeless cheapest-anywhere belong to the Game.
 
 **Catalogue prices** are keyed by `(store, store_id)` in `catalogue_price`, with a per-store title→id table (`steam_app`, `gog_app`, `xbox_app`). All three resolvers follow the same rule: **a normalised title claimed by more than one product is dropped, not guessed** — editions, demos and soundtracks collide, and the wrong price is worse than no price. Each sweep collects everything in memory first and only replaces its rows once complete, so a partial fetch cannot erase what is known.
 
@@ -50,6 +53,7 @@ Every one of these was verified against the live service before being written do
 | Xbox | `emerald.xboxservices.com/xboxcomfd/browse`, unauthenticated, 25/page. `Filters` must be **base64 of the JSON filter map** (the `PlayWith=XboxPlayAnywhere` in the page URL returns a 500), an **MS-CV header is mandatory** but never validated, and discounts arrive as `19.999998`. |
 | Epic | Owned games only. Prices are unreachable: `store.epicgames.com/graphql` and the browse page are both **Cloudflare 403** to anything but a real browser, and the authenticated catalog service returns a list price with **no discount field anywhere**. ADR-0005 has the full table of what was tried. |
 | GeForce NOW | Pentanet's `cloud.gg/api/games/list/{page}/{size}` — **zero-indexed**, page 1 silently drops the first 100 games. NVIDIA's static list is not a complete catalogue and is fetched only for the Steam appids it carries. |
+| gg.deals | `api.gg.deals/v1/prices/by-steam-app-id/`, keyed by Steam appid, 100 ids per request. The **documented** `gg.deals/api/...` host is a Cloudflare 403 to anything but a browser; the `api.` host answers plain JSON. Prices arrive as decimal strings, not cents. |
 
 ## Testing
 

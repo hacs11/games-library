@@ -98,6 +98,7 @@ test("the on-sale filter and discount sort use the real discount", async () => {
     apps: 2,
     products: 0,
     titles: 0,
+    market: { fetched: null, priced: 0, asked: 0 },
     steam: { priced: 2, onSale: 1 },
     gog: { priced: 0, onSale: 0 },
     xbox: { priced: 0, onSale: 0 },
@@ -245,4 +246,60 @@ test("a discount rounds to whole percent, since the service returns 19.999998 fo
   const [game] = discoverGames(db);
   assert.deepEqual(game.prices, [{ store: "xbox", formatted: "A$14.99", discount: 50 }]);
   assert.equal(game.best_discount, 50);
+});
+
+// A 90% discount on a A$10 indie saves less than 30% off a A$100 deluxe edition,
+// and an unpriced title is not the cheapest thing in the catalogue.
+test("the cheapest and biggest-saving sorts order by dollars, not percent", () => {
+  const db = open(":memory:");
+  db.exec(`
+    INSERT INTO gfn_entry (title, norm_title, store, status) VALUES
+      ('Indie', 'indie', 'STEAM', 'AVAILABLE'),
+      ('Deluxe', 'deluxe', 'STEAM', 'AVAILABLE'),
+      ('Unpriced', 'unpriced', 'STEAM', 'AVAILABLE');
+    INSERT INTO steam_app (norm_title, appid) VALUES ('indie', '1'), ('deluxe', '2');
+    INSERT INTO catalogue_price (store, store_id, currency, final_cents, initial_cents, discount_percent, formatted, fetched_at) VALUES
+      ('steam', '1', 'AUD', 100, 1000, 90, 'A$ 1.00', 'now'),
+      ('steam', '2', 'AUD', 7000, 10000, 30, 'A$ 70.00', 'now');
+  `);
+
+  assert.deepEqual(discoverGames(db, { sort: "discount" }).map((g) => g.title), ["Indie", "Deluxe", "Unpriced"]);
+  assert.deepEqual(discoverGames(db, { sort: "saving" }).map((g) => g.title), ["Deluxe", "Indie", "Unpriced"]);
+  assert.deepEqual(discoverGames(db, { sort: "price" }).map((g) => g.title), ["Indie", "Deluxe", "Unpriced"]);
+});
+
+// The Store filter asks a whole question, not half of one: with it on, "on
+// sale" and the deal sorts mean on sale at that Store.
+test("a Store filter narrows the on-sale filter and the deal sorts to that Store", () => {
+  const db = open(":memory:");
+  db.exec(`
+    INSERT INTO gfn_entry (title, norm_title, store, status) VALUES
+      ('Both Stores', 'both stores', 'STEAM', 'AVAILABLE'),
+      ('Both Stores', 'both stores', 'XBOX', 'AVAILABLE'),
+      ('Xbox Deal', 'xbox deal', 'XBOX', 'AVAILABLE');
+    INSERT INTO steam_app (norm_title, appid) VALUES ('both stores', '1');
+    INSERT INTO xbox_app (norm_title, product_id) VALUES ('both stores', 'X1'), ('xbox deal', 'X2');
+    INSERT INTO catalogue_price (store, store_id, currency, final_cents, initial_cents, discount_percent, formatted, fetched_at) VALUES
+      ('steam', '1', 'AUD', 2500, 5000, 50, 'A$ 25.00', 'now'),
+      ('xbox', 'X1', 'AUD', 6000, 6000, 0, 'A$60.00', 'now'),
+      ('xbox', 'X2', 'AUD', 9000, 10000, 10, 'A$90.00', 'now');
+  `);
+
+  assert.deepEqual(
+    discoverGames(db, { store: "XBOX", sale: true }).map((g) => g.title),
+    ["Xbox Deal"],
+    "the Steam half-price on Both Stores is not a sale you can take on Xbox",
+  );
+  assert.equal(discoverCount(db, { store: "XBOX", sale: true }), 1);
+  assert.deepEqual(
+    discoverGames(db, { store: "XBOX", sort: "discount" }).map((g) => g.title),
+    ["Xbox Deal", "Both Stores"],
+    "and the sort ranks on the Xbox discount, not Steam's",
+  );
+  assert.deepEqual(
+    discoverGames(db, { sale: true }).map((g) => g.title),
+    ["Both Stores", "Xbox Deal"],
+    "unfiltered, best-across-stores is still the answer",
+  );
+  assert.equal(discoverDetail(db, "both stores").best_discount, 50, "the panel is unfiltered");
 });

@@ -117,3 +117,45 @@ test("sorting by score puts the unrated last, not first", async () => {
     "Obscure Thing",
   ]);
 });
+
+// The year rides along in the request the score already makes, so collecting it
+// costs nothing — but every appid memoised before it existed has to be asked
+// once more, and an appid Steam gives no date for must not be asked forever.
+test("the release year is collected with the score, and pre-year rows are re-asked exactly once", async () => {
+  const db = open(":memory:");
+  db.exec(`
+    INSERT INTO gfn_entry (title, norm_title, store, status) VALUES
+      ('Baldur''s Gate 3', 'baldur s gate 3', 'STEAM', 'AVAILABLE'),
+      ('Unreleased Thing', 'unreleased thing', 'STEAM', 'AVAILABLE');
+    INSERT INTO steam_app (norm_title, appid) VALUES ('baldur s gate 3', '1'), ('unreleased thing', '2');
+    -- A row from before the year was asked for: score known, year_at null.
+    INSERT INTO steam_rating (appid, score, url, fetched_at) VALUES ('1', 96, 'http://mc/1', 'long ago');
+  `);
+
+  assert.equal(pendingCount(db), 2, "the pre-year row re-enters the sweep alongside the never-asked one");
+
+  const restore = stub(async (url) => {
+    const appid = new URL(url).searchParams.get("appids");
+    assert.match(new URL(url).searchParams.get("filters"), /release_date/, "asked in the same request as the score");
+    return Response.json({
+      [appid]: {
+        success: true,
+        // Steam localises the date, and gives none at all for some titles.
+        data: appid === "1" ? { release_date: { coming_soon: false, date: "3 Aug, 2023" } } : {},
+      },
+    });
+  });
+  try {
+    await fetchMetacritic(db, { delay: 0 });
+  } finally {
+    restore();
+  }
+
+  const rows = Object.fromEntries(
+    db.prepare("SELECT appid, year, year_at IS NOT NULL AS asked FROM steam_rating").all().map((r) => [r.appid, r]),
+  );
+  assert.equal(rows["1"].year, 2023, "read out of the prose date");
+  assert.equal(rows["2"].year, null, "no date published, so no year claimed");
+  assert.equal(rows["2"].asked, 1, "but it is stamped as asked");
+  assert.equal(pendingCount(db), 0, "so neither is asked a third time");
+});
