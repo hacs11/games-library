@@ -22,7 +22,7 @@ export function resolveGame(db, title) {
 
 // Store junk: demos, soundtracks, editors and the like. These words are only
 // ever suffixes on store artifacts, never on a real game's title.
-const NON_GAME = /\b(demo|soundtrack|ost|playtest|beta|pre-?game editor|editor|dedicated server|sdk|artbook|art book|wallpapers?|season pass|trailer|bonus content|test server)\b/i;
+const NON_GAME = /\b(demo|soundtrack|ost|playtest|beta|pre-?game editor|editor|resource archiver|dedicated server|sdk|artbook|art book|wallpapers?|season pass|trailer|bonus content|test server)\b/i;
 
 // IGDB first, title clustering for whatever it cannot identify. Anything not
 // resolved by IGDB is flagged for review rather than merged silently.

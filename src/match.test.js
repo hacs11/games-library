@@ -169,6 +169,7 @@ test("store junk is hidden, and never merges into the game it is named after", a
     "steam",
     "Football Manager 2024",
     "Football Manager 2024 Pre-game editor",
+    "Football Manager 2024 Resource archiver",
     "The Last Caretaker Demo",
     "Hades",
   );
@@ -183,6 +184,7 @@ test("store junk is hidden, and never merges into the game it is named after", a
       new Map([
         ["football manager 2024", { igdb_id: 1, title: "Football Manager 2024" }],
         ["football manager 2024 pre game editor", { igdb_id: 1, title: "Football Manager 2024" }],
+        ["football manager 2024 resource archiver", { igdb_id: 1, title: "Football Manager 2024" }],
         ["hades", { igdb_id: 2, title: "Hades" }],
       ]),
   );
@@ -191,8 +193,9 @@ test("store junk is hidden, and never merges into the game it is named after", a
   const visible = listGames(db).map((g) => g.title);
   assert.ok(visible.includes("Football Manager 2024"), "the real game stays");
   assert.ok(!visible.includes("Football Manager 2024 Pre-game editor"), "the editor is hidden");
+  assert.ok(!visible.includes("Football Manager 2024 Resource archiver"), "and the archiver");
   assert.ok(!visible.includes("The Last Caretaker Demo"), "so is the demo");
-  assert.equal(listGames(db, { all: true }).length, 4, "nothing is deleted, only hidden");
+  assert.equal(listGames(db, { all: true }).length, 5, "nothing is deleted, only hidden");
 });
 
 test("expansions and mods stay visible; DLC does not", async () => {
