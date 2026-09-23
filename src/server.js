@@ -149,6 +149,9 @@ const routes = {
       genre: p.get("genre") ?? "",
       studio: p.get("studio") ?? "",
       minScore: Number(p.get("minScore")) || 0,
+      // Carried with the filters, unlike Library's, because starring 303s back
+      // to this exact URL: dropping it would snap a long list back to 200.
+      limit: p.get("limit") === "all" ? "all" : "",
     };
     // Same shape as the Library panel: its own URL, so it is linkable and the
     // back button closes it.
@@ -156,7 +159,7 @@ const routes = {
     if (req.headers["x-panel"]) return html(res, discoverPanel(selected, `/discover${queryString(filters)}`));
     html(
       res,
-      page("Discover", discoverPage(discoverGames(db, filters), filters, discoverCount(db, filters), watchCount(db), genreList(db, "gfn_entry"), studioList(db, "gfn_entry")), "/discover", {
+      page("Discover", discoverPage(discoverGames(db, filters, filters.limit ? 0 : 200), filters, discoverCount(db, filters), watchCount(db), genreList(db, "gfn_entry"), studioList(db, "gfn_entry")), "/discover", {
         panel: discoverPanel(selected, `/discover${queryString(filters)}`),
       }),
     );

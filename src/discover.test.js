@@ -5,6 +5,7 @@ import { syncGfn } from "./gfn.js";
 import { fetchMetacritic, pendingCount } from "./steam.js";
 import { syncStore } from "./sync.js";
 import { matchEntitlements } from "./match.js";
+import { discoverPage } from "./views.js";
 
 const CLOUDGG = [
   { title: "Baldur's Gate 3", genres: ["ROLE_PLAYING"], variants: [{ id: "1", appStore: "STEAM" }, { id: "2", appStore: "GOG" }] },
@@ -170,4 +171,22 @@ test("Discover filters by minimum score, and keeps the unrated out", () => {
     "a title with no score is not a title scoring zero",
   );
   assert.equal(discoverCount(db, { minScore: 90 }), 1);
+});
+
+// The catalogue is ~2,000 titles and the grid renders 200: A–Z, everything past
+// "B" was unreachable except by searching for it.
+test("a capped Discover grid says so and links to the rest, keeping the filters", () => {
+  const db = open(":memory:");
+  db.exec(`INSERT INTO gfn_entry (title, norm_title, store, status) VALUES
+    ('Alpha', 'alpha', 'STEAM', 'AVAILABLE'), ('Beta', 'beta', 'STEAM', 'AVAILABLE'),
+    ('Gamma', 'gamma', 'STEAM', 'AVAILABLE')`);
+  const filters = { sort: "rating" };
+
+  const capped = discoverPage(discoverGames(db, filters, 2), filters, discoverCount(db, filters));
+  assert.match(capped, /showing 2 of 3 titles/);
+  assert.match(capped, /href="\/discover\?sort=rating&limit=all">Show all 3</);
+
+  const whole = discoverPage(discoverGames(db, filters, 0), { ...filters, limit: "all" }, 3);
+  assert.doesNotMatch(whole, /Show all/);
+  assert.doesNotMatch(whole, /showing/);
 });

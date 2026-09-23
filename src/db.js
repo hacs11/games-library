@@ -211,7 +211,7 @@ const SORTS = {
 };
 
 // Rendering 614 covers inline makes a 560KB page on every navigation, so the
-// grid is capped and the count says so; ?limit=0 renders everything.
+// grid is capped and the count says so; ?limit=all renders everything.
 export function listGames(db, { q = "", store = "", gfn = false, all = false, genre = "", studio = "", sort = "", minScore = 0 } = {}, limit = 240) {
   return db
     .prepare(

@@ -361,9 +361,10 @@ const studioFilter = (studios, value = "") => `
   <datalist id="studios">${studios.map((n) => `<option value="${esc(n)}">`).join("")}</datalist>`;
 
 // Every filter's default is "unset", so clearing them is just the bare path.
-// `view` is a display preference, not a filter, and survives the reset.
+// `view` is a display preference, not a filter, and survives the reset; how
+// much of the list is shown is neither, and is not a reason to offer one.
 const clearLink = (path, filters, keep = {}) =>
-  qs({ ...filters, ...keep, view: "" }) ? `<a class="gfn-toggle" href="${path}${qs(keep)}">Clear filters</a>` : "";
+  qs({ ...filters, ...keep, view: "", limit: "" }) ? `<a class="gfn-toggle" href="${path}${qs(keep)}">Clear filters</a>` : "";
 
 export const listPage = (games, filters = {}, opts = {}) => {
   const { hidden = 0, stale = [], genres = [], studios = [], total = 0, view = "grid", matching = 0 } = opts;
@@ -606,7 +607,7 @@ const PRICE_STORES = ["steam", "gog", "xbox"];
 
 export const discoverPage = (games, filters = {}, total = 0, watching = 0, genres = [], studios = []) => `
 ${title("Discover", {
-  count: `${total} titles`,
+  count: games.length < total ? `showing ${games.length} of ${total} titles` : `${total} titles`,
   intro: "Games on GeForce NOW in Australia that you don't own, and the stores selling them. Everything here streams — you would only be buying the licence. Prices are Steam's, GOG's and Xbox's, in AUD.",
 })}
 <p class="intro" style="margin:-8px 0 14px">An <span class="low-badge">ATL</span> mark means the cheapest retail price anywhere is at its all-time low — which store that is is not published, so check it streams. All-time lows by <a href="https://gg.deals/" target="_blank" rel="noopener">gg.deals</a>.</p>
@@ -654,6 +655,11 @@ ${
     : `<div class="grid">
 ${games.map((g) => discoverTile(g, filters)).join("\n")}
 </div>`
+}
+${
+  games.length < total
+    ? `<p class="empty" style="padding:34px 0"><a href="/discover${qs({ ...filters, limit: "all" })}">Show all ${total}</a></p>`
+    : ""
 }`;
 
 // The Library's tile, with what Discover knows instead of what ownership knows:
