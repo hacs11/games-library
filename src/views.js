@@ -678,7 +678,6 @@ const discoverTile = (g, filters) => `<div class="tile-wrap">
 ${starForm(g, `/discover${qs(filters)}`, ` style="position:absolute;top:7px;left:7px;z-index:1"`)}
 <a class="tile" data-keep-scroll href="/discover${qs({ ...filters, title: g.norm_title })}">
   ${coverArt(g)}
-    <span class="gfn-badge" title="In the GeForce NOW catalogue">${icon("lightning", 9)}GFN</span>
     ${g.rating != null ? `<span class="score-badge" style="right:auto;left:7px" title="Metacritic ${g.rating}">${g.rating}</span>` : ""}
     <span class="deal-stack">
       ${g.at_retail_low ? `<span class="low-badge" title="Cheapest retail price anywhere is at its all-time low — gg.deals does not say which store, so check it streams">ATL</span>` : ""}
@@ -914,8 +913,8 @@ const connectCard = ({ store, label, row, counts = "", body, action }) => `
 // A saved secret is never rendered back: the field comes back empty, and blank
 // on submit means "keep the one that is saved". Identifiers (SteamID, client
 // ID) are not secrets and stay visible — they are how you tell accounts apart.
-const secretField = (label, name, saved, type = "text") =>
-  `<label class="field">${label} <input class="input" name="${name}" type="${type}" value=""
+const secretField = (label, name, saved) =>
+  `<label class="field">${label} <input class="input" name="${name}" type="password" value=""
     placeholder="${saved ? "Saved — leave blank to keep" : ""}"${saved ? "" : " required"}></label>`;
 
 export const connectPage = (rows, pendingScores = 0, ratings = {}, counts = {}) => {
@@ -1002,7 +1001,7 @@ ${connectCard({
   body: `<p class="intro" style="margin:0 0 10px">Steam, GOG and Xbox prices in AUD for the Discover catalogue, resolved by title against each store's own catalogue. Xbox covers Play Anywhere titles only, the same rule your Xbox library follows. Epic publishes a list price but no discount, so its titles show no price. Takes a couple of minutes.</p>
   <form method="post" action="/connect/ggdeals">
     <p class="intro" style="margin:0 0 8px">A <a href="https://gg.deals/api/" target="_blank" rel="noopener">gg.deals</a> key adds a market low — cheapest anywhere and its all-time low — to the detail panel, including for titles no store here prices. It names no store, so it is never one of the store prices above. Free for personal use; generate a key in your gg.deals settings.</p>
-    ${secretField("gg.deals API key", "key", data("ggdeals").key, "password")}
+    ${secretField("gg.deals API key", "key", data("ggdeals").key)}
     <button class="btn btn-primary" style="font-size:12px">Save</button>
   </form>`,
 })}
@@ -1016,14 +1015,14 @@ ${connectCard({
   action: running.ratings
     ? jobBar("ratings", running.ratings)
     : `<form class="inline" method="post" action="/ratings"><button class="btn btn-secondary" style="font-size:12px">${
-        pendingScores > 0 ? `Fetch ${Math.min(pendingScores, 250)} scores` : "Refresh scores"
+        pendingScores > 0 ? `Fetch ${pendingScores} scores` : "Refresh scores"
       }</button></form>`,
   body: `<form method="post" action="/connect/igdb">
     <p class="intro" style="margin:0 0 8px">IGDB identifies games across stores and supplies art, genres and years. Register at <a href="https://dev.twitch.tv/console/apps" target="_blank" rel="noopener">dev.twitch.tv/console/apps</a>.${
-      pendingScores > 0 ? ` <strong>${pendingScores} Steam titles have no Metacritic score yet</strong> (yours first, then Discover's) — Steam rate limits this, so it runs in batches.` : ""
+      pendingScores > 0 ? ` <strong>${pendingScores} Steam titles have no Metacritic score yet</strong> (yours first, then Discover's) — Steam allows about 200 every five minutes, so one press works through them all, waiting out the limit as it goes.` : ""
     }</p>
     <label class="field">Client ID <input class="input" name="client_id" value="${esc(data("igdb").client_id ?? "")}" required></label>
-    ${secretField("Client secret", "client_secret", data("igdb").client_secret, "password")}
+    ${secretField("Client secret", "client_secret", data("igdb").client_secret)}
     <button class="btn btn-primary" style="font-size:12px">Save</button>
   </form>`,
 })}
