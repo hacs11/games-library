@@ -926,7 +926,9 @@ export const connectPage = (rows, pendingScores = 0, ratings = {}, counts = {}) 
     return r?.data ? JSON.parse(r.data) : {};
   };
   const syncBtn = (s, label = "Resync") =>
-    `<form class="inline" method="post" action="/sync/${s}"><button class="btn btn-secondary" style="font-size:12px">${label}</button></form>`;
+    running[`sync-${s}`]
+      ? jobBar(`sync-${s}`, running[`sync-${s}`])
+      : `<form class="inline" method="post" action="/sync/${s}"><button class="btn btn-secondary" style="font-size:12px">${label}</button></form>`;
 
   return `
 ${title("Connect", { intro: "Linked stores and the last time each one was read." })}

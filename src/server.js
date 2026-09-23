@@ -342,25 +342,30 @@ function queryString(filters) {
   return s ? `?${s}` : "";
 }
 
-// Every Store syncs through the same route; a failure is recorded on that
-// Store's own row by syncStore, and the Connect page shows it.
+// Every Store syncs through the same route, in the background like a price
+// refresh: a Sync asks IGDB about every Entitlement and can take minutes, and
+// pressing the button again while one runs must not start a second. A failure
+// is recorded on that Store's own row, and the Connect page shows it.
 const syncRoute = (path) => {
   const store = path.match(/^\/sync\/(\w+)$/)?.[1];
+  if (!store) return null;
   // GeForce NOW is a public catalogue, not a Store with a Connection.
-  if (store === "gfn") {
-    return (_req, res) =>
-      syncGfn(db)
-        .catch((err) =>
-          db
-            .prepare(
+  const run =
+    store === "gfn"
+      ? () =>
+          syncGfn(db).catch((err) => {
+            db.prepare(
               `INSERT INTO store_credential (store, status, last_error) VALUES ('gfn', 'error', ?)
                  ON CONFLICT (store) DO UPDATE SET status = 'error', last_error = excluded.last_error`,
-            )
-            .run(err.message),
-        )
-        .then(() => seeOther(res, "/connect"));
-  }
-  return store && ((_req, res) => syncStore(db, store).catch(() => {}).then(() => seeOther(res, "/connect")));
+            ).run(err.message);
+            throw err;
+          })
+      : () => syncStore(db, store);
+  const label = { gfn: "GeForce NOW" }[store] ?? store[0].toUpperCase() + store.slice(1);
+  return (_req, res) => {
+    start(`sync-${store}`, [[`Syncing ${label}`, run]]);
+    seeOther(res, "/connect");
+  };
 };
 
 // A form POST needs no CORS preflight, so any page the browser happens to be

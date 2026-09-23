@@ -70,3 +70,28 @@ test("the guard only stands in front of writes", async () => {
   assert.equal(res.status, 200);
   assert.deepEqual(JSON.parse(res.body), {});
 });
+
+// A Sync asks IGDB about every Entitlement and can run for minutes. Held open
+// for that long, the browser shows nothing; pressed twice, it ran twice.
+test("a Sync runs in the background, and pressing it again does not start a second", async () => {
+  const real = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = () => {
+    calls++;
+    return new Promise(() => {}); // the catalogue never answers
+  };
+  try {
+    for (let i = 0; i < 2; i++) {
+      const res = spy();
+      await handle(request("POST", "/sync/gfn"), res);
+      assert.equal(res.status, 303);
+      assert.equal(res.headers.location, "/connect");
+    }
+    const jobs = spy();
+    await handle(request("GET", "/jobs"), jobs);
+    assert.deepEqual(Object.keys(JSON.parse(jobs.body)), ["sync-gfn"]);
+    assert.equal(calls, 1);
+  } finally {
+    globalThis.fetch = real;
+  }
+});

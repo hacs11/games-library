@@ -14,12 +14,12 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
   const cred = credential(db, store);
   if (!cred?.data) throw new Error(`${store} is not connected`);
 
-  let entitlements;
   try {
-    entitlements = await fetcher(cred.data, db);
+    return await sync(db, store, fetcher, cred);
   } catch (err) {
-    // An expired login is a different problem from a broken Sync: it needs you,
-    // not a retry.
+    // Recorded wherever it happened — the fetch or the matching after it — so
+    // the Connect page says why. An expired login is a different problem from
+    // a broken Sync: it needs you, not a retry.
     db.prepare("UPDATE store_credential SET status = ?, last_error = ? WHERE store = ?").run(
       err.reauth ? "needs_reauth" : "error",
       err.message,
@@ -27,6 +27,10 @@ export async function syncStore(db, store, fetcher = FETCHERS[store]) {
     );
     throw err;
   }
+}
+
+async function sync(db, store, fetcher, cred) {
+  const entitlements = await fetcher(cred.data, db);
 
   const now = new Date().toISOString();
   const upsert = db.prepare(

@@ -89,3 +89,13 @@ test("a resync leaves each Entitlement on its Game while IGDB is being asked", a
   assert.equal(orphaned, 0);
   assert.equal(listGames(db).length, 2);
 });
+
+// Only a failed fetch used to be written down; one after it — here a Store
+// handing back an Entitlement with no title — vanished into the server log.
+test("a Sync that fails after the fetch is recorded on that Store too", async () => {
+  const db = connected();
+  await assert.rejects(() => syncStore(db, "steam", async () => [{ store_game_id: "1", store_title: null }]));
+  const row = credential(db, "steam");
+  assert.equal(row.status, "error");
+  assert.match(row.last_error, /NOT NULL/);
+});
