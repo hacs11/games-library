@@ -63,7 +63,7 @@ test("a market low is asked for by Steam appid and stored in cents", async () =>
   const db = seeded();
   assert.equal(pendingCount(db), 2);
   const { asked, priced } = await fetched(db);
-  assert.deepEqual(asked, [["111", "222"]], "one request, both appids, 100 per request");
+  assert.deepEqual(asked.map((ids) => ids.toSorted()), [["111", "222"]], "one request, both appids, 100 per request");
   assert.equal(priced, 2);
 
   const item = discoverDetail(db, "half off");

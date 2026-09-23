@@ -175,6 +175,15 @@ const MIGRATIONS = [
     addColumn(db, "steam_rating", "year INTEGER");
     addColumn(db, "steam_rating", "year_at TEXT");
   },
+  // Discover joins gfn_entry back onto itself by title (and store, for sells())
+  // on every row, and the Library counts Entitlements by Game. Unindexed, one
+  // Discover query took ~470ms against the real catalogue, and a page runs two.
+  (db) =>
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS gfn_entry_norm_title ON gfn_entry (norm_title, store);
+      CREATE INDEX IF NOT EXISTS entitlement_game_id ON entitlement (game_id);
+      CREATE INDEX IF NOT EXISTS entitlement_gfn_title ON entitlement (gfn_title);
+    `),
 ];
 
 export function open(path = "data/library.db") {
