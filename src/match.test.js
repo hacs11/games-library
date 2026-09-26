@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { open, saveCredential, unmatched, listGames } from "./db.js";
-import { matchEntitlements } from "./match.js";
+import { addEditions, matchEntitlements } from "./match.js";
 import { syncStore } from "./sync.js";
 
 const seeded = async (store, ...titles) => {
@@ -245,4 +245,24 @@ test("IGDB being down keeps what IGDB already identified rather than re-guessing
 
   assert.deepEqual(db.prepare("SELECT game_id, confidence FROM entitlement").get(), before);
   assert.equal(db.prepare("SELECT count(*) c FROM game WHERE igdb_id = 1").get().c, 1, "the identified Game survives");
+});
+
+// docs/adr/0003: GeForce NOW streams the base game from any edition holding it.
+test("an edition prices its base title only when no product carries the base title itself", () => {
+  const byName = new Map([
+    ["the witcher 3 wild hunt complete edition", "w3"],
+    ["cyberpunk 2077", "cp"],
+    ["cyberpunk 2077 ultimate edition", "cpu"],
+    ["remnant ii standard edition", "r-std"],
+    ["remnant ii deluxe edition", "r-dlx"],
+    ["control ultimate edition", "c-ult"],
+    ["control gold edition", "c-gold"],
+    ["tomb raider anniversary", "tra"],
+  ]);
+  addEditions(byName, new Set());
+  assert.equal(byName.get("the witcher 3 wild hunt"), "w3");
+  assert.equal(byName.get("cyberpunk 2077"), "cp", "the base product wins over its edition");
+  assert.equal(byName.get("remnant ii"), "r-std", "of several editions, the Standard one is the base game");
+  assert.equal(byName.has("control"), false, "two editions and no Standard one is a guess");
+  assert.equal(byName.has("tomb raider"), false, "Anniversary without Edition is its own game");
 });

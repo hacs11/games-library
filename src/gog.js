@@ -1,5 +1,5 @@
 import { saveCredential, replaceAll } from "./db.js";
-import { normaliseTitle } from "./match.js";
+import { addEditions, normaliseTitle } from "./match.js";
 
 // GOG Galaxy's own OAuth client. Publicly known and used by every third-party
 // GOG tool; there is no way to register your own.
@@ -113,6 +113,7 @@ export async function syncCatalogue(db, { pages = 100 } = {}) {
     }
     if (page >= (json.pages ?? 1)) break;
   }
+  addEditions(byName, ambiguous);
 
   // A partial sweep must not erase what is already known, so the replace only
   // happens once every page has been fetched.

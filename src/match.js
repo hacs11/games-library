@@ -9,6 +9,28 @@ export function normaliseTitle(title) {
     .trim();
 }
 
+// An edition is the Game plus its DLC. GeForce NOW lists the base game, and
+// streams it from any edition that contains it (docs/adr/0003), so when a Store
+// sells no product under the base title itself its edition is what you buy.
+// "Anniversary" needs "edition": Tomb Raider: Anniversary is a different game.
+const EDITION = / (?:(?:game of the year|goty|ultimate|complete|definitive|digital deluxe|deluxe|gold|enhanced|special|premium|standard)(?: edition)?|anniversary edition)$/;
+
+// Lends each base title its edition's value when no product claims the base
+// title itself. Two editions and no Standard one is a guess, so it is dropped
+// like any other ambiguous title; an ambiguous edition lends nothing.
+export function addEditions(byName, ambiguous) {
+  const editions = new Map();
+  for (const key of byName.keys()) {
+    const base = key.replace(EDITION, "");
+    if (base === key || !base || ambiguous.has(key) || byName.has(base)) continue;
+    editions.set(base, [...(editions.get(base) ?? []), key]);
+  }
+  for (const [base, keys] of editions) {
+    const pick = keys.length === 1 ? keys[0] : keys.find((k) => / standard(?: edition)?$/.test(k));
+    if (pick) byName.set(base, byName.get(pick));
+  }
+}
+
 export function resolveGame(db, title) {
   const norm = normaliseTitle(title);
   // norm_title is deliberately not unique: IGDB can hold two distinct works

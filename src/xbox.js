@@ -1,4 +1,4 @@
-import { normaliseTitle } from "./match.js";
+import { addEditions, normaliseTitle } from "./match.js";
 import { replaceAll } from "./db.js";
 
 // Xbox has no reachable "what do I own" endpoint, so its Entitlements are typed
@@ -101,6 +101,7 @@ export async function syncCatalogue(db, { pages = 200 } = {}) {
     // is the only end-of-catalogue signal the response gives.
     if (!ct || !JSON.parse(Buffer.from(ct, "base64").toString()).HasMore) break;
   }
+  addEditions(byName, ambiguous);
 
   if (byName.size === 0) throw new Error("Xbox catalogue came back empty; keeping the previous one.");
 

@@ -1,4 +1,4 @@
-import { normaliseTitle } from "./match.js";
+import { addEditions, normaliseTitle } from "./match.js";
 import { replaceAll } from "./db.js";
 const OWNED = "https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/";
 
@@ -107,6 +107,7 @@ export async function syncAppIds(db, credentials) {
     if (!response?.have_more_results) break;
     last = response.last_appid;
   }
+  addEditions(byName, ambiguous);
 
   const insert = db.prepare("INSERT OR REPLACE INTO steam_app (norm_title, appid) VALUES (?, ?)");
   // One transaction: the whole of Steam is deleted and re-inserted here, and a
