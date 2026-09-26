@@ -86,6 +86,9 @@ const cents = (s) => {
   return Number.isFinite(n) ? n : null;
 };
 
+// Packs are included because GOG sells some base games as one — "Cyberpunk
+// 2077" is a pack of the game and its bonus content, not a game product.
+//
 // Like Steam's app list, a title claimed by more than one product is dropped —
 // GOG sells editions, bundles and soundtracks under names that collide, and
 // pricing the wrong one is worse than pricing nothing.
@@ -95,7 +98,7 @@ export async function syncCatalogue(db, { pages = 100 } = {}) {
 
   for (let page = 1; page <= pages; page++) {
     const res = await fetch(
-      `${CATALOG}?limit=100&page=${page}&countryCode=AU&locale=en-US&currencyCode=AUD&productType=in:game`,
+      `${CATALOG}?limit=100&page=${page}&countryCode=AU&locale=en-US&currencyCode=AUD&productType=in:game,pack`,
     );
     if (!res.ok) throw new Error(`GOG catalogue returned ${res.status} ${res.statusText}`);
     const json = await res.json();

@@ -143,6 +143,17 @@ test("GOG prices come from its own catalogue, ambiguous titles excluded", async 
   assert.equal(priceCounts(db).products, 1, "Hades is claimed by two products, so it is dropped");
 });
 
+test("the GOG sweep asks for packs, because GOG sells some base games as one", async () => {
+  const urls = [];
+  const restore = stub(async (url) => (urls.push(String(url)), Response.json(CATALOG)));
+  try {
+    await syncCatalogue(open(":memory:"));
+  } finally {
+    restore();
+  }
+  assert.match(urls[0], /productType=in:game,pack/, "Cyberpunk 2077 is a pack on GOG");
+});
+
 test("a title sold on both stores shows both prices, cheapest discount leading the sort", async () => {
   const db = await withGog();
   const bg3 = discoverGames(db).find((g) => g.title === "Baldur's Gate 3");
